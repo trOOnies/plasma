@@ -6,7 +6,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Track games too, with the hours you've played and which ones you own.
 - Group series, movies and games into plans, like playlists. A built-in Favorites plan holds everything you've marked with a heart.
 - Tick off episodes one at a time or by season. A series' status follows its progress.
-- See what to watch next on the home page, and search and filter the library.
+- See what to watch next on the home page, and search, filter and page through the library.
 - Keep a duration, release date and description for every movie and episode.
 - See what's upcoming and what just came out on the home page.
 - Keep one central list of platforms, and record where each title can be watched.

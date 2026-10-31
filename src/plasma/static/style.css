@@ -196,6 +196,11 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
 .breadcrumbs a { color: var(--muted); }
 .pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; }
 
+.pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin: 16px 0; }
+.pagination .button { min-width: 34px; text-align: center; }
+.pagination [aria-current="page"] { background: var(--plasma) border-box; border-color: transparent; color: var(--accent-text); font-weight: 600; }
+.pagination [aria-disabled="true"], .pagination [aria-disabled="true"]:hover { border-color: var(--border); color: var(--muted); opacity: 0.6; cursor: not-allowed; }
+
 .episode-rows li { flex-wrap: nowrap; align-items: flex-start; gap: 12px; }
 .episode-rows button.episode { flex: none; width: 44px; }
 .episode-info { min-width: 0; }

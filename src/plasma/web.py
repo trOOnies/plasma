@@ -6,10 +6,12 @@ import os
 import signal
 import sqlite3
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import date
+from math import ceil
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
@@ -34,6 +36,7 @@ from plasma.models import (
 )
 
 PACKAGE_DIR = Path(__file__).parent
+PAGE_SIZE = 25
 
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 templates.env.globals["statuses"] = list(Status)
@@ -140,6 +143,35 @@ def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def page_numbers(page: int, last: int) -> list[int | None]:
+    """The first, last and nearby pages, with None wherever some are skipped."""
+    numbers: list[int | None] = []
+    for number in sorted({1, *range(page - 2, page + 3), last} & set(range(1, last + 1))):
+        if numbers and number - numbers[-1] > 1:
+            numbers.append(None)
+        numbers.append(number)
+    return numbers
+
+
+def paginate(request: Request, items: Sequence, page: int) -> tuple[Sequence, dict]:
+    """One page of items, and links to the others that keep the current filters."""
+    last = max(ceil(len(items) / PAGE_SIZE), 1)
+    page = min(max(page, 1), last)
+    filters = {key: value for key, value in request.query_params.items() if value and key != "page"}
+
+    def url(number: int) -> str:
+        return f"{request.url.path}?{urlencode({**filters, 'page': number})}"
+
+    pages = {
+        "current": page,
+        "last": last,
+        "previous": url(page - 1) if page > 1 else None,
+        "next": url(page + 1) if page < last else None,
+        "links": [(number, number and url(number)) for number in page_numbers(page, last)],
+    }
+    return items[(page - 1) * PAGE_SIZE : page * PAGE_SIZE], pages
+
+
 def title_form(
     name: str = Form(""),
     year: str = Form(""),
@@ -229,11 +261,13 @@ def titles(
     q: str = "",
     favorite: bool = False,
     owned: bool = False,
+    page: int = 1,
 ) -> Response:
+    matches = library.list_titles(conn, kind, status, q.strip(), favorite=favorite, owned=owned)
+    shown, pages = paginate(request, matches, page)
     context = {
-        "titles": library.list_titles(
-            conn, kind, status, q.strip(), favorite=favorite, owned=owned
-        ),
+        "titles": shown,
+        "pages": pages,
         "kind": kind,
         "status": status,
         "q": q,

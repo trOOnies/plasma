@@ -19,6 +19,21 @@
 </li>
 {% endmacro %}
 
+{% macro pagination(pages, label) %}
+{% if pages.last > 1 %}
+<nav class="pagination" aria-label="{{ label }}">
+  {% if pages.previous %}<a class="button small" rel="prev" href="{{ pages.previous }}">Previous</a>{% else %}<span class="button small" aria-disabled="true">Previous</span>{% endif %}
+  {% for number, url in pages.links %}
+  {% if not number %}<span class="muted" aria-hidden="true">…</span>
+  {% elif number == pages.current %}<a class="button small" aria-current="page" href="{{ url }}">{{ number }}</a>
+  {% else %}<a class="button small" href="{{ url }}">{{ number }}</a>
+  {% endif %}
+  {% endfor %}
+  {% if pages.next %}<a class="button small" rel="next" href="{{ pages.next }}">Next</a>{% else %}<span class="button small" aria-disabled="true">Next</span>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
 {% macro release_row(release) %}
 <li>
   {% if release.season %}

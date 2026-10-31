@@ -863,3 +863,66 @@ def test_serve_reports_inputs_it_cannot_create(uvicorn_calls, tmp_path, capsys):
     (tmp_path / "info").write_text("")
     assert web.main([]) == 1
     assert uvicorn_calls == [] and "error:" in capsys.readouterr().err
+
+
+def add_movies(conn, count: int) -> None:
+    with conn:
+        for number in range(1, count + 1):
+            library.create_title(conn, movie(f"Film {number:03}"))
+
+
+def pagination_navs(page: str) -> list[str]:
+    return re.findall(r'<nav class="pagination".*?</nav>', page, re.DOTALL)
+
+
+def test_short_list_has_no_pagination(client, conn):
+    add_movies(conn, web.PAGE_SIZE)
+    page = client.get("/titles?kind=movie").text
+    assert "Film 025" in page and pagination_navs(page) == []
+
+
+def test_pagination_is_mirrored_above_and_below_the_list(client, conn):
+    add_movies(conn, web.PAGE_SIZE + 1)
+    page = client.get("/titles?kind=movie").text
+    top, bottom = pagination_navs(page)
+    strip_label = re.compile(r'aria-label="[^"]*"')
+    assert strip_label.sub("", top) == strip_label.sub("", bottom)
+    assert page.index(top) < page.index('<ul class="rows">') < page.index(bottom)
+    assert "Film 025" in page and "Film 026" not in page
+    assert '<span class="button small" aria-disabled="true">Previous</span>' in top
+
+
+@pytest.mark.parametrize(
+    "number, first, last",
+    [("2", "Film 026", "Film 030"), ("99", "Film 026", "Film 030"), ("-1", "Film 001", "Film 025")],
+)
+def test_pages_split_the_list_and_stay_in_range(client, conn, number, first, last):
+    add_movies(conn, 30)
+    page = client.get(f"/titles?kind=movie&page={number}").text
+    assert first in page and last in page
+    assert "Film 025" not in page or first == "Film 001"
+
+
+def test_page_links_keep_the_filters(client, conn):
+    add_movies(conn, 30)
+    page = client.get("/titles?kind=movie&q=Film+0&status=&page=1").text
+    assert 'href="/titles?kind=movie&amp;q=Film+0&amp;page=2"' in page
+
+
+def test_filter_form_starts_again_at_the_first_page(client, conn):
+    add_movies(conn, 30)
+    assert 'name="page"' not in client.get("/titles?kind=movie&page=2").text
+
+
+@pytest.mark.parametrize(
+    "page, last, numbers",
+    [
+        (1, 1, [1]),
+        (1, 3, [1, 2, 3]),
+        (1, 11, [1, 2, 3, None, 11]),
+        (6, 11, [1, None, 4, 5, 6, 7, 8, None, 11]),
+        (11, 11, [1, None, 9, 10, 11]),
+    ],
+)
+def test_page_numbers_skip_distant_pages(page, last, numbers):
+    assert web.page_numbers(page, last) == numbers

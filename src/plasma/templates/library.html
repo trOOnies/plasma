@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_label, title_row %}
+{% from "_macros.html" import pagination, status_label, title_row %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
 <h1>{% if kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
@@ -21,9 +21,11 @@
 </form>
 
 {% if titles %}
+{{ pagination(pages, "Pages, top") }}
 <ul class="rows">
   {% for title in titles %}{{ title_row(title) }}{% endfor %}
 </ul>
+{{ pagination(pages, "Pages, bottom") }}
 {% else %}
 <p class="muted">No titles match.</p>
 {% endif %}
