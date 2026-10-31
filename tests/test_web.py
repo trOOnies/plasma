@@ -926,3 +926,10 @@ def test_filter_form_starts_again_at_the_first_page(client, conn):
 )
 def test_page_numbers_skip_distant_pages(page, last, numbers):
     assert web.page_numbers(page, last) == numbers
+
+
+def test_footer_is_on_every_page(client):
+    for url in ("/", "/help", "/titles", "/missing"):
+        page = client.get(url).text
+        assert '<footer class="site-footer">' in page
+        assert "&copy; 2026 Plasma by trOOnies" in page and "Made with Claude Code" in page

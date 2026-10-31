@@ -47,6 +47,9 @@
 * { box-sizing: border-box; }
 
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   margin: 0;
   background:
     radial-gradient(70vw 50vh at 10% 0, var(--glow-blue), transparent),
@@ -58,6 +61,8 @@ body {
 }
 
 main {
+  flex: 1;
+  width: 100%;
   max-width: 860px;
   margin: 0 auto;
   padding: 24px 16px 64px;
@@ -94,6 +99,18 @@ code { background: var(--surface-raised); padding: 1px 5px; border-radius: 4px; 
   letter-spacing: 0.04em;
   text-decoration: none;
 }
+
+.site-footer {
+  padding: 14px 16px;
+  background: var(--surface);
+  border-top: 1px solid;
+  border-image: var(--plasma) 1;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.site-footer p { margin: 0; }
 
 .site-header nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .site-header nav a { color: var(--muted); text-decoration: none; }
