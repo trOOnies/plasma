@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Help · Plasma{% endblock %}
+{% block content %}
+<div class="help">
+  <h1>Help</h1>
+  <p>Plasma keeps track of the movies and TV series you watch. Everything stays on your own computer.</p>
+
+  <h2>Getting around</h2>
+  <ul>
+    <li><strong>Home</strong> (click <a href="/">plasma</a>) shows your stats, the series you're in the middle of, and what's up next.</li>
+    <li><strong><a href="/titles">Library</a></strong> lists everything, and you can search it or filter by status and favorites.</li>
+    <li><strong><a href="/titles?kind=movie">Movies</a></strong> and <strong><a href="/titles?kind=series">Series</a></strong> show just one kind.</li>
+    <li><strong>+ Movie</strong> and <strong>+ Series</strong> add a new title.</li>
+  </ul>
+
+  <h2>Tracking what you watch</h2>
+  <ul>
+    <li>New titles have no status. Click a status on a title's page to set it: Planned, Watching, Completed or Dropped. Click the highlighted one again to clear it.</li>
+    <li>Click an episode number to mark it watched. Every episode before it is marked too.</li>
+    <li><strong>Mark season watched</strong> also marks all earlier seasons.</li>
+    <li>Click an earlier watched episode to go back to it. Everything after it is unmarked, along with its watch dates.</li>
+    <li>Click your last watched episode to unmark just that one.</li>
+    <li><strong>Clear season</strong> only unmarks that season.</li>
+    <li>The <strong>Watched S01E02</strong> button marks your next episode, and it also appears on the home page.</li>
+  </ul>
+
+  <h2>How series status works</h2>
+  <p>A series' status follows its episodes: some watched is Watching, and all of them is Completed. With nothing watched it has no status, unless you set it to Planned. The status buttons that don't match your episodes are disabled.</p>
+  <ul>
+    <li><strong>Completed</strong> marks every episode watched.</li>
+    <li><strong>Dropped</strong> stays until you pick another status.</li>
+    <li>If you add a season to a completed series, it goes back to Watching.</li>
+  </ul>
+
+  <h2>Favorites and details</h2>
+  <ul>
+    <li>Click the heart next to a title's name to make it a favorite, and click again to undo it.</li>
+    <li>The <strong>description</strong> says what the title is about, and <strong>notes</strong> are your own thoughts. Change either with <strong>Edit</strong>.</li>
+    <li>Movies have a duration in minutes, also under <strong>Edit</strong>.</li>
+    <li>Episodes have a duration and description. Click <strong>Episode details</strong> on a season to edit them, and hover over an episode number to see them.</li>
+  </ul>
+
+  <h2>Adding titles from files</h2>
+  <p>You can add many titles at once by listing them in <code>info/library.yaml</code>, then running <code>make import</code>.</p>
+  <pre><code>movies:
+  - name: Arrival
+    year: 2016
+    status: completed
+    rating: 9
+    duration: 116
+    description: A linguist is asked to talk to the aliens.
+    notes: Worth a rewatch.
+    image: arrival.jpg
+
+series:
+  - name: The Wire
+    year: 2002
+    seasons: [13, 12, 12, 13, 10]
+    watched_through: S02E04
+    episodes:
+      S01E01:
+        duration: 60
+        description: The first episode.</code></pre>
+  <p>Importing again is safe, because it won't undo anything you changed here. It adds new titles and episodes, and fills in a rating, duration, description or notes that are still blank.</p>
+
+  <h2>Adding images</h2>
+  <p>Images come from <code>info/</code> and can't be uploaded from the app:</p>
+  <ol>
+    <li>Put the file in <code>info/images/</code>. It can be a JPG, PNG, WebP, GIF or AVIF.</li>
+    <li>Add its file name to the title in <code>info/library.yaml</code>, such as <code>image: arrival.jpg</code>.</li>
+    <li>Run <code>make import</code>.</li>
+  </ol>
+
+  <h2>Leaving Plasma</h2>
+  <p>The door button in the top right corner stops Plasma and closes the page. Changes are saved as you make them, and anything you've typed into an open form is saved first.</p>
+  <p>Browsers only let a page close itself in some cases. If yours doesn't, Plasma is still stopped and you can close the tab yourself. Run <code>make serve</code> to start it again.</p>
+
+  <h2>About</h2>
+  <p>The source code is at <a href="https://github.com/trOOnies/plasma">github.com/trOOnies/plasma</a>.</p>
+  <p>Plasma is free software, released under the <a href="https://github.com/trOOnies/plasma/blob/main/LICENSE">GNU General Public License v3.0</a>.</p>
+</div>
+{% endblock %}

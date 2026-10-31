@@ -1,4 +1,8 @@
-{% macro status_badge(status) %}<span class="badge badge-{{ status }}">{{ status }}</span>{% endmacro %}
+{% macro status_badge(status) %}{% if status != "none" %}<span class="badge badge-{{ status }}">{{ status }}</span>{% endif %}{% endmacro %}
+
+{% macro status_label(status) %}{{ "No status" if status == "none" else status | capitalize }}{% endmacro %}
+
+{% macro heart() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-8.5-5.2-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 2.7c0 6-8.5 11.2-8.5 11.2z"/></svg>{% endmacro %}
 
 {% macro progress(title) %}
 {% if title.episodes_total %}

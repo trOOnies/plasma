@@ -23,8 +23,8 @@ def conn(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 
 @pytest.fixture
-def client(db_path: Path) -> TestClient:
-    return TestClient(create_app(db_path), follow_redirects=False)
+def client(db_path: Path, tmp_path: Path) -> TestClient:
+    return TestClient(create_app(db_path, tmp_path / "info"), follow_redirects=False)
 
 
 def series(name: str = "Show", seasons: tuple[int, ...] = (3, 2), **fields) -> TitleInput:

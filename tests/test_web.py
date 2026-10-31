@@ -1,4 +1,6 @@
+import signal
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,7 +18,7 @@ def test_home_on_empty_library(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Nothing in progress" in response.text
-    assert "Your watchlist is empty" in response.text
+    assert "Nothing planned yet" in response.text
 
 
 def test_static_stylesheet_is_served(client):
@@ -128,25 +130,208 @@ def test_delete(client, conn):
     assert client.get(f"/titles/{title_id}").status_code == 404
 
 
-def test_movie_toggle(client, conn):
+def test_status_buttons_change_the_status_in_one_click(client, conn):
     title_id = add(conn, movie())
-    assert "Mark watched" in client.get(f"/titles/{title_id}").text
-    client.post(f"/titles/{title_id}/watched")
-    assert "Mark unwatched" in client.get(f"/titles/{title_id}").text
-    client.post(f"/titles/{title_id}/watched")
-    assert library.get_title(conn, title_id)["status"] == "planned"
+    page = client.get(f"/titles/{title_id}").text
+    assert f'action="/titles/{title_id}/status"' in page
+    response = client.post(f"/titles/{title_id}/status", data={"status": "completed"})
+    assert response.headers["location"] == f"/titles/{title_id}"
+    assert library.get_title(conn, title_id)["status"] == "completed"
+    page = client.get(f"/titles/{title_id}").text
+    assert 'class="status-completed" name="status" value="none" aria-pressed="true"' in page
 
 
-def test_movie_toggle_rejects_series(client, conn):
-    title_id = add(conn, series())
-    assert client.post(f"/titles/{title_id}/watched").status_code == 404
+def test_new_title_has_no_status_selected(client, conn):
+    title_id = add(conn, movie())
+    assert 'aria-pressed="true"' not in client.get(f"/titles/{title_id}").text.split("</h1>")[1]
+    assert library.get_title(conn, title_id)["status"] == "none"
+    assert "badge-" not in client.get("/titles").text
+
+
+def test_clicking_the_active_status_clears_it(client, conn):
+    title_id = add(conn, movie(status=Status.PLANNED))
+    client.post(f"/titles/{title_id}/status", data={"status": "none"})
+    assert library.get_title(conn, title_id)["status"] == "none"
+
+
+def test_up_next_only_lists_planned_titles(client, conn):
+    add(conn, movie("Chosen", status=Status.PLANNED))
+    add(conn, movie("Undecided"))
+    page = client.get("/").text
+    assert "Chosen" in page and "Undecided" not in page
+
+
+def test_no_status_filter(client, conn):
+    add(conn, movie("Chosen", status=Status.PLANNED))
+    add(conn, movie("Undecided"))
+    page = client.get("/titles?status=none").text
+    assert "Undecided" in page and "Chosen" not in page
+    assert "No status" in page
+
+
+def test_status_buttons_disable_what_the_episodes_rule_out(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    client.post(f"/titles/{title_id}/episodes/1/1")
+    page = client.get(f"/titles/{title_id}").text
+    assert 'value="planned" aria-pressed="false" disabled' in page
+    assert 'value="completed" aria-pressed="false" disabled' not in page
+    assert 'value="dropped" aria-pressed="false" title' not in page
+    assert 'value="dropped" aria-pressed="false" disabled' not in page
+
+
+def test_status_rejects_an_unknown_value(client, conn):
+    title_id = add(conn, movie())
+    assert client.post(f"/titles/{title_id}/status", data={"status": "nope"}).status_code == 422
+
+
+def test_favorite_button_toggles(client, conn):
+    title_id = add(conn, movie())
+    assert 'aria-label="Add to favorites"' in client.get(f"/titles/{title_id}").text
+    assert client.post(f"/titles/{title_id}/favorite").status_code == 303
+    assert 'aria-label="Remove from favorites"' in client.get(f"/titles/{title_id}").text
+    assert library.get_title(conn, title_id)["favorite"] == 1
+    client.post(f"/titles/{title_id}/favorite")
+    assert library.get_title(conn, title_id)["favorite"] == 0
+
+
+def test_library_favorites_filter(client, conn):
+    title_id = add(conn, movie("Loved"))
+    add(conn, movie("Other"))
+    client.post(f"/titles/{title_id}/favorite")
+    page = client.get("/titles?favorite=true").text
+    assert "Loved" in page and "Other" not in page
+
+
+def test_description_and_notes_are_saved_and_shown_separately(client, conn):
+    title_id = add(conn, movie("Film"))
+    form = {"name": "Film", "description": "The plot", "notes": "My take"}
+    client.post(f"/titles/{title_id}", data=form)
+    title = library.get_title(conn, title_id)
+    assert (title["description"], title["notes"]) == ("The plot", "My take")
+    page = client.get(f"/titles/{title_id}").text
+    assert "The plot" in page and "Your notes" in page and "My take" in page
+    assert ">The plot</textarea>" in client.get(f"/titles/{title_id}/edit").text
+
+
+def test_image_is_shown_and_served_from_info(client, conn, tmp_path):
+    (tmp_path / "info" / "images").mkdir(parents=True)
+    (tmp_path / "info" / "images" / "my poster.png").write_bytes(b"png")
+    title_id = add(conn, movie())
+    with conn:
+        library.set_image(conn, title_id, "my poster.png")
+    assert 'src="/images/my%20poster.png"' in client.get(f"/titles/{title_id}").text
+    assert client.get("/images/my%20poster.png").content == b"png"
+
+
+def test_titles_without_an_image_have_no_poster(client, conn):
+    title_id = add(conn, movie())
+    assert "/images/" not in client.get(f"/titles/{title_id}").text
+
+
+def test_images_outside_the_folder_are_not_served(client, tmp_path):
+    (tmp_path / "info" / "images").mkdir(parents=True)
+    (tmp_path / "info" / "library.yaml").write_text("secret")
+    assert client.get("/images/..%2Flibrary.yaml").status_code == 404
+
+
+def test_missing_image_gives_a_404(client):
+    assert client.get("/images/gone.jpg").status_code == 404
+
+
+def test_clicking_an_earlier_watched_episode_regresses(client, conn):
+    title_id = add(conn, series(seasons=(3,)))
+    client.post(f"/titles/{title_id}/episodes/1/3")
+    client.post(f"/titles/{title_id}/episodes/1/1")
+    assert library.get_title(conn, title_id)["episodes_watched"] == 1
+
+
+def test_movie_duration_through_the_form(client, conn):
+    form = {"kind": "movie", "name": "Film", "duration": "169"}
+    location = client.post("/titles", data=form).headers["location"]
+    assert "2h 49m" in client.get(location).text
+    assert 'value="169"' in client.get(f"{location}/edit").text
+
+
+def test_series_form_has_no_duration_field(client):
+    assert 'name="duration"' not in client.get("/titles/new?kind=series").text
+    assert 'name="duration"' in client.get("/titles/new?kind=movie").text
+
+
+@pytest.mark.parametrize(
+    "minutes, text", [(45, "45m"), (60, "1h"), (169, "2h 49m")]
+)
+def test_format_duration(minutes, text):
+    assert web.format_duration(minutes) == text
+
+
+def test_season_page_404s_for_unknown_seasons_and_movies(client, conn):
+    assert client.get(f"/titles/{add(conn, series(seasons=(1,)))}/seasons/9").status_code == 404
+    assert client.get(f"/titles/{add(conn, movie())}/seasons/1").status_code == 404
+
+
+def test_season_page_saves_episode_details(client, conn):
+    title_id = add(conn, series(seasons=(2, 2)))
+    assert "Episode details" in client.get(f"/titles/{title_id}").text
+    page = client.get(f"/titles/{title_id}/seasons/2").text
+    assert "S02E01" in page and "S02E02" in page
+
+    form = {"duration_1": "45", "description_1": "Plot", "duration_2": "", "description_2": ""}
+    response = client.post(f"/titles/{title_id}/seasons/2/details", data=form)
+    assert response.headers["location"] == f"/titles/{title_id}#season-2"
+
+    first = library.episodes_by_season(conn, title_id)[2][0]
+    assert (first["duration"], first["description"]) == (45, "Plot")
+    assert 'title="S02E01 · 45m · Plot"' in client.get(f"/titles/{title_id}").text
+    assert ">Plot</textarea>" in client.get(f"/titles/{title_id}/seasons/2").text
+
+
+def test_season_page_invalid_details_save_nothing(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    form = {"duration_1": "45", "duration_2": "0"}
+    response = client.post(f"/titles/{title_id}/seasons/1/details", data=form)
+    assert response.status_code == 422
+    assert "S01E02 duration" in response.text and 'value="45"' in response.text
+    assert library.episodes_by_season(conn, title_id)[1][0]["duration"] is None
+
+
+def test_exit_says_goodbye_and_stops_the_server(client, monkeypatch):
+    stopped = []
+    monkeypatch.setattr(web, "stop_server", lambda: stopped.append(True))
+    response = client.post("/exit")
+    assert response.status_code == 200
+    assert "Plasma has stopped" in response.text and "window.close()" in response.text
+    assert stopped == [True]
+
+
+def test_exit_button_is_on_every_page(client):
+    assert 'action="/exit"' in client.get("/").text
+    assert 'action="/exit"' in client.get("/help").text
+
+
+@pytest.mark.parametrize("parent_pid, target", [(4321, 4321), (None, 1234)])
+def test_stop_server_signals_the_reloader_when_there_is_one(monkeypatch, parent_pid, target):
+    calls = []
+    parent = SimpleNamespace(pid=parent_pid) if parent_pid else None
+    monkeypatch.setattr(web.multiprocessing, "parent_process", lambda: parent)
+    monkeypatch.setattr(web.os, "getpid", lambda: 1234)
+    monkeypatch.setattr(web.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    web.stop_server()
+    assert calls == [(target, signal.SIGINT)]
+
+
+def test_help_page_covers_the_repo_and_license(client):
+    page = client.get("/help")
+    assert page.status_code == 200
+    assert "https://github.com/trOOnies/plasma" in page.text
+    assert "GNU General Public License" in page.text
+    assert 'href="/help"' in client.get("/").text
 
 
 def test_episode_toggle_returns_to_its_season(client, conn):
     title_id = add(conn, series(seasons=(2, 2)))
     response = client.post(f"/titles/{title_id}/episodes/2/1")
     assert response.headers["location"] == f"/titles/{title_id}#season-2"
-    assert library.get_title(conn, title_id)["episodes_watched"] == 1
+    assert library.get_title(conn, title_id)["episodes_watched"] == 3
 
 
 def test_season_buttons(client, conn):
@@ -196,7 +381,9 @@ def test_names_are_escaped(client, conn):
         ("get", "/titles/999"),
         ("get", "/titles/999/edit"),
         ("post", "/titles/999/delete"),
-        ("post", "/titles/999/watched"),
+        ("post", "/titles/999/favorite"),
+        ("get", "/titles/999/seasons/1"),
+        ("post", "/titles/999/seasons/1/details"),
         ("post", "/titles/999/next"),
         ("post", "/titles/999/episodes/1/1"),
         ("get", "/nowhere"),

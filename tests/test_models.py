@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from plasma.models import ImportEntry, Kind, TitleInput
+from plasma.models import Details, ImportEntry, Kind, Status, TitleInput
 
 
 def test_blank_form_fields_become_none():
@@ -63,6 +63,58 @@ def test_watched_through_codes(code):
 def test_watched_through_must_be_a_listed_episode(code):
     with pytest.raises(ValidationError):
         ImportEntry(kind="series", name="Show", seasons=[3, 5], watched_through=code)
+
+
+@pytest.mark.parametrize("image", ["poster.jpg", "My Poster.PNG", "a.webp"])
+def test_image_file_names(image):
+    assert ImportEntry(kind="movie", name="Film", image=image).image == image
+
+
+@pytest.mark.parametrize(
+    "image", ["../secret.jpg", "sub/poster.jpg", "/etc/poster.jpg", "a\\b.jpg", "poster.svg", ".."]
+)
+def test_image_must_be_a_plain_image_file_name(image):
+    with pytest.raises(ValidationError):
+        ImportEntry(kind="movie", name="Film", image=image)
+
+
+def test_status_defaults_to_none():
+    assert TitleInput(kind="movie", name="Film").status is Status.NONE
+
+
+@pytest.mark.parametrize("duration", [0, -5, 6001, "long"])
+def test_duration_range(duration):
+    with pytest.raises(ValidationError):
+        Details(duration=duration)
+
+
+def test_blank_details():
+    details = Details(duration="", description=None)
+    assert (details.duration, details.description) == (None, "")
+
+
+def test_series_duration_is_rejected():
+    with pytest.raises(ValidationError, match="duration only applies to movies"):
+        TitleInput(kind="series", name="Show", duration=45)
+
+
+def test_episode_details_in_an_import_entry():
+    entry = ImportEntry(
+        kind="series",
+        name="Show",
+        seasons=[2],
+        episodes={"s1e2": {"duration": 45, "description": "Plot"}},
+    )
+    assert entry.episodes[(1, 2)].duration == 45
+
+
+@pytest.mark.parametrize(
+    "episodes",
+    [{"S09E01": {}}, {"pilot": {}}, {"S01E01": {"lenght": 45}}, {"S01E01": {"duration": 0}}, "x"],
+)
+def test_bad_episode_details_are_rejected(episodes):
+    with pytest.raises(ValidationError):
+        ImportEntry(kind="series", name="Show", seasons=[2], episodes=episodes)
 
 
 def test_unknown_import_field_is_rejected():

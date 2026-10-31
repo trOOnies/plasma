@@ -6,19 +6,27 @@ from pathlib import Path
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS titles (
+SCHEMA_VERSION = 1
+
+TITLES_COLUMNS = """
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('movie', 'series')),
     name TEXT NOT NULL,
     year INTEGER,
-    status TEXT NOT NULL DEFAULT 'planned'
-        CHECK (status IN ('planned', 'watching', 'completed', 'dropped')),
+    status TEXT NOT NULL DEFAULT 'none'
+        CHECK (status IN ('none', 'planned', 'watching', 'completed', 'dropped')),
     rating INTEGER CHECK (rating BETWEEN 1 AND 10),
+    duration INTEGER,
+    description TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    favorite INTEGER NOT NULL DEFAULT 0,
+    image TEXT,
     watched_on TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+"""
+
+SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS titles ({TITLES_COLUMNS});
 
 CREATE UNIQUE INDEX IF NOT EXISTS titles_identity
     ON titles (kind, name COLLATE NOCASE, COALESCE(year, 0));
@@ -28,11 +36,32 @@ CREATE TABLE IF NOT EXISTS episodes (
     title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
     season INTEGER NOT NULL,
     number INTEGER NOT NULL,
+    duration INTEGER,
+    description TEXT NOT NULL DEFAULT '',
     watched INTEGER NOT NULL DEFAULT 0,
     watched_on TEXT,
     UNIQUE (title_id, season, number)
 );
 """
+
+# Columns that databases from before version 1 may be missing.
+ADDED_COLUMNS = {
+    "titles": {
+        "duration": "INTEGER",
+        "description": "TEXT NOT NULL DEFAULT ''",
+        "favorite": "INTEGER NOT NULL DEFAULT 0",
+        "image": "TEXT",
+    },
+    "episodes": {
+        "duration": "INTEGER",
+        "description": "TEXT NOT NULL DEFAULT ''",
+    },
+}
+
+COPIED_COLUMNS = (
+    "id, kind, name, year, rating, duration, description, notes, favorite, image,"
+    " watched_on, updated_at"
+)
 
 
 def default_path() -> Path:
@@ -40,7 +69,7 @@ def default_path() -> Path:
 
 
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    """Open the database, creating it if needed.
+    """Open the database, creating or upgrading it if needed.
 
     Cross-thread use is allowed because FastAPI may run a request's dependency
     and its handler on different worker threads. Each request has its own connection.
@@ -50,5 +79,54 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
+    if _version(conn) < SCHEMA_VERSION:
+        if _has_titles(conn):
+            _upgrade(conn)
+        conn.executescript(SCHEMA)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     return conn
+
+
+def _version(conn: sqlite3.Connection) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _has_titles(conn: sqlite3.Connection) -> bool:
+    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'titles'"
+    return conn.execute(query).fetchone() is not None
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def _upgrade(conn: sqlite3.Connection) -> None:
+    """Rebuild titles, since SQLite can't change the status CHECK and default in place.
+
+    Before version 1 every title started as planned, so planned says nothing about
+    what the user chose and becomes none. Foreign keys must be off here, or dropping
+    the old table would cascade and delete every episode.
+    """
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if _version(conn) >= SCHEMA_VERSION:
+                return
+            _add_missing_columns(conn)
+            conn.execute(f"CREATE TABLE titles_new ({TITLES_COLUMNS})")
+            conn.execute(
+                f"INSERT INTO titles_new ({COPIED_COLUMNS}, status)"
+                f" SELECT {COPIED_COLUMNS}, CASE status WHEN 'planned' THEN 'none' ELSE status END"
+                " FROM titles"
+            )
+            conn.execute("DROP TABLE titles")
+            conn.execute("ALTER TABLE titles_new RENAME TO titles")
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")

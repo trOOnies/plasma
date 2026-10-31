@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import status_label %}
 {% set series = form.kind == "series" %}
 {% block title %}{{ "Edit" if title_id else "Add" }} · Plasma{% endblock %}
 {% block content %}
@@ -26,7 +27,7 @@
     <label>Status
       <select name="status">
         {% for option in statuses %}
-        <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ option.value | capitalize }}</option>
+        <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ status_label(option.value) }}</option>
         {% endfor %}
       </select>
     </label>
@@ -41,13 +42,22 @@
     </small>
   </label>
   {% else %}
-  <label>Watched on
-    <input name="watched_on" type="date" value="{{ form.watched_on }}">
-  </label>
+  <div class="field-row">
+    <label>Duration (minutes)
+      <input name="duration" type="number" min="1" max="6000" value="{{ form.duration }}">
+    </label>
+    <label>Watched on
+      <input name="watched_on" type="date" value="{{ form.watched_on }}">
+    </label>
+  </div>
   {% endif %}
 
+  <label>Description
+    <textarea name="description" rows="3" placeholder="What it's about">{{ form.description }}</textarea>
+  </label>
+
   <label>Notes
-    <textarea name="notes" rows="4">{{ form.notes }}</textarea>
+    <textarea name="notes" rows="4" placeholder="Your own thoughts">{{ form.notes }}</textarea>
   </label>
 
   <div class="actions">

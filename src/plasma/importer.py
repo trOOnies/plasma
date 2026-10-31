@@ -2,8 +2,9 @@
 
 A title's tracking fields (status, watch date, progress) are read the first time
 it is imported. After that the app owns them, so a re-import cannot undo anything
-done in the web UI. Re-imports only add new titles, add newly listed episodes, and
-fill in a rating or notes that are still blank.
+done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
+in a rating, duration, description or notes that are still blank, and apply the
+image, which can only be set from info/.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -22,6 +23,8 @@ from plasma.db import connect
 from plasma.models import ImportEntry, Kind, describe_errors
 
 INFO_DIR = Path("info")
+IMAGES_FOLDER = "images"
+REQUIRED_FOLDERS = (IMAGES_FOLDER,)
 REQUIRED_FILES = ("library.yaml",)
 SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES}
 
@@ -59,6 +62,11 @@ def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
     if not directory.exists():
         directory.mkdir(parents=True)
         created.append(directory)
+    for name in REQUIRED_FOLDERS:
+        path = directory / name
+        if not path.exists():
+            path.mkdir()
+            created.append(path)
     for name in REQUIRED_FILES:
         path = directory / name
         if not path.exists():
@@ -89,9 +97,15 @@ def parse_file(path: Path) -> list[ImportEntry]:
                 problems.append(f"{where}: expected a mapping with at least a name")
                 continue
             try:
-                entries.append(ImportEntry(**{**item, "kind": kind}))
+                entry = ImportEntry(**{**item, "kind": kind})
             except ValidationError as error:
                 problems.extend(f"{where}: {message}" for message in describe_errors(error))
+                continue
+            image = path.parent / IMAGES_FOLDER / entry.image if entry.image else None
+            if image and not image.is_file():
+                problems.append(f"{where}: image: {image} does not exist")
+                continue
+            entries.append(entry)
     if problems:
         raise ImportFileError(problems)
     return entries
@@ -99,6 +113,14 @@ def parse_file(path: Path) -> list[ImportEntry]:
 
 def yaml_files(directory: Path) -> list[Path]:
     return sorted(path for path in directory.iterdir() if path.suffix in (".yaml", ".yml"))
+
+
+def _fill_episodes(conn: sqlite3.Connection, title_id: int, entry: ImportEntry) -> bool:
+    changes = [
+        library.fill_episode_blanks(conn, title_id, season, number, details)
+        for (season, number), details in entry.episodes.items()
+    ]
+    return any(changes)
 
 
 def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> ImportResult:
@@ -111,11 +133,25 @@ def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> Impo
             )
             if entry.watched_through:
                 library.mark_through(conn, title_id, *entry.watched_through)
+            if entry.image:
+                library.set_image(conn, title_id, entry.image)
+            _fill_episodes(conn, title_id, entry)
             result.added += 1
             continue
         grew = library.extend_seasons(conn, existing["id"], entry.seasons)
-        filled = library.fill_blanks(conn, existing["id"], entry.rating, entry.notes)
-        if grew or filled:
+        filled = library.fill_blanks(
+            conn,
+            existing["id"],
+            rating=entry.rating,
+            duration=entry.duration,
+            description=entry.description,
+            notes=entry.notes,
+        )
+        filled = _fill_episodes(conn, existing["id"], entry) or filled
+        new_image = entry.image is not None and entry.image != existing["image"]
+        if new_image:
+            library.set_image(conn, existing["id"], entry.image)
+        if grew or filled or new_image:
             result.updated += 1
         else:
             result.unchanged += 1

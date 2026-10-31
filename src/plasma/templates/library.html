@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, status_badge %}
+{% from "_macros.html" import heart, progress, status_badge, status_label %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
 <h1>{% if kind %}{{ "Movies" if kind.value == "movie" else "Series" }}{% else %}Library{% endif %}</h1>
@@ -10,9 +10,10 @@
   <select name="status" aria-label="Status">
     <option value="">Any status</option>
     {% for option in statuses %}
-    <option value="{{ option.value }}" {% if status == option %}selected{% endif %}>{{ option.value | capitalize }}</option>
+    <option value="{{ option.value }}" {% if status == option %}selected{% endif %}>{{ status_label(option.value) }}</option>
     {% endfor %}
   </select>
+  <label class="check"><input type="checkbox" name="favorite" value="true" {% if favorite %}checked{% endif %}> Favorites</label>
   <button>Filter</button>
 </form>
 
@@ -20,6 +21,7 @@
 <ul class="rows">
   {% for title in titles %}
   <li>
+    {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
     <a href="/titles/{{ title.id }}">{{ title.name }}</a>
     <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}{% if title.rating %} · ★ {{ title.rating }}{% endif %}</span>
     {{ status_badge(title.status) }}

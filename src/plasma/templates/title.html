@@ -1,35 +1,52 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, status_badge %}
+{% from "_macros.html" import heart, progress %}
 {% block title %}{{ title.name }} · Plasma{% endblock %}
 {% block content %}
-<div class="title-head">
-  <div>
-    <h1>{{ title.name }}{% if title.year %} <span class="muted">({{ title.year }})</span>{% endif %}</h1>
-    <p>
-      {{ status_badge(title.status) }}
+<div class="title-layout{% if title.image %} has-poster{% endif %}">
+  {% if title.image %}
+  <img class="poster" src="/images/{{ title.image | urlencode }}" alt="{{ title.name }}">
+  {% endif %}
+  <div class="title-main">
+    <div class="title-head">
+      <div class="title-name">
+        <form method="post" action="/titles/{{ title.id }}/favorite">
+          <button class="favorite{% if title.favorite %} active{% endif %}"
+                  aria-pressed="{{ 'true' if title.favorite else 'false' }}"
+                  aria-label="{{ 'Remove from favorites' if title.favorite else 'Add to favorites' }}"
+                  title="{{ 'Remove from favorites' if title.favorite else 'Add to favorites' }}">{{ heart() }}</button>
+        </form>
+        <h1>{{ title.name }}{% if title.year %} <span class="muted">({{ title.year }})</span>{% endif %}</h1>
+      </div>
+      <div class="actions">
+        {% if next_episode %}
+        <form method="post" action="/titles/{{ title.id }}/next">
+          <button class="primary">Watched {{ next_episode | episode_code }}</button>
+        </form>
+        {% endif %}
+        <a class="button" href="/titles/{{ title.id }}/edit">Edit</a>
+      </div>
+    </div>
+
+    <form class="status-picker" method="post" action="/titles/{{ title.id }}/status" aria-label="Status">
+      {% for option in picker_statuses %}
+      {% set active = title.status == option.value %}
+      <button class="status-{{ option.value }}" name="status" value="{{ 'none' if active else option.value }}" aria-pressed="{{ 'true' if active else 'false' }}"{% if option.value in locked_statuses %} disabled title="Follows your episodes"{% elif active %} title="Click to clear"{% endif %}>{{ option.value | capitalize }}</button>
+      {% endfor %}
+    </form>
+
+    <p class="meta">
       {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
+      {% if title.duration %}<span class="muted">{{ title.duration | duration }}</span>{% endif %}
       {% if title.kind == "movie" and title.watched_on %}<span class="muted">Watched {{ title.watched_on }}</span>{% endif %}
     </p>
-  </div>
-  <div class="actions">
-    {% if title.kind == "movie" %}
-    <form method="post" action="/titles/{{ title.id }}/watched">
-      {% if title.status == "completed" %}
-      <button>Mark unwatched</button>
-      {% else %}
-      <button class="primary">Mark watched</button>
-      {% endif %}
-    </form>
-    {% elif next_episode %}
-    <form method="post" action="/titles/{{ title.id }}/next">
-      <button class="primary">Watched {{ next_episode | episode_code }}</button>
-    </form>
+
+    {% if title.description %}<p class="description">{{ title.description }}</p>{% endif %}
+    {% if title.notes %}
+    <h2>Your notes</h2>
+    <p class="notes">{{ title.notes }}</p>
     {% endif %}
-    <a class="button" href="/titles/{{ title.id }}/edit">Edit</a>
   </div>
 </div>
-
-{% if title.notes %}<p class="notes">{{ title.notes }}</p>{% endif %}
 
 {% if title.kind == "series" %}
   {% if seasons %}
@@ -42,6 +59,7 @@
       <div class="season-head">
         <h2>Season {{ season }}</h2>
         <span class="muted">{{ watched }}/{{ episodes | length }}</span>
+        <a class="button small details-link" href="/titles/{{ title.id }}/seasons/{{ season }}">Episode details</a>
         <button class="small" name="watched" value="{{ 'false' if watched == episodes | length else 'true' }}"
                 formaction="/titles/{{ title.id }}/seasons/{{ season }}">
           {{ "Clear season" if watched == episodes | length else "Mark season watched" }}
@@ -53,7 +71,7 @@
                 formaction="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}"
                 aria-pressed="{{ 'true' if episode.watched else 'false' }}"
                 aria-label="{{ episode | episode_code }}"
-                {% if episode.watched_on %}title="Watched {{ episode.watched_on }}"{% endif %}>{{ episode.number }}</button>
+                title="{{ episode | episode_tooltip }}">{{ episode.number }}</button>
         {% endfor %}
       </div>
     </section>

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from plasma import importer, library, seed
-from plasma.models import Kind
+from plasma.models import Details, Kind
 
 
 def write(directory: Path, text: str, name: str = "library.yaml") -> Path:
@@ -95,6 +95,99 @@ def test_reimport_fills_blank_rating_and_notes(conn, tmp_path):
     assert (film["rating"], film["notes"]) == (7, "Nice")
 
 
+def test_reimport_fills_a_blank_description_but_keeps_an_existing_one(conn, tmp_path):
+    text = "movies:\n  - name: Film\n    description: {}\n"
+    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
+    assert importer.import_paths(conn, [write(tmp_path, text.format("First"))]).updated == 1
+    assert importer.import_paths(conn, [write(tmp_path, text.format("Second"))]).updated == 0
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["description"] == "First"
+
+
+def test_image_is_imported_and_can_be_replaced(conn, tmp_path):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "a.jpg").touch()
+    (tmp_path / "images" / "b.jpg").touch()
+    text = "movies:\n  - name: Film\n    image: {}\n"
+    importer.import_paths(conn, [write(tmp_path, text.format("a.jpg"))])
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["image"] == "a.jpg"
+    assert importer.import_paths(conn, [write(tmp_path, text.format("b.jpg"))]).updated == 1
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["image"] == "b.jpg"
+
+
+def test_reimport_without_an_image_keeps_the_current_one(conn, tmp_path):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / "a.jpg").touch()
+    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n    image: a.jpg\n")])
+    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["image"] == "a.jpg"
+
+
+def test_missing_image_file_is_reported_and_nothing_is_written(conn, tmp_path):
+    path = write(tmp_path, "movies:\n  - name: Film\n    image: gone.jpg\n")
+    with pytest.raises(importer.ImportFileError, match=r"movies\[0\]: image: .*gone.jpg"):
+        importer.import_paths(conn, [path])
+    assert library.list_titles(conn) == []
+
+
+def test_duration_and_episode_details_are_imported(conn, tmp_path):
+    text = """
+movies:
+  - name: Film
+    duration: 120
+series:
+  - name: Show
+    seasons: [2]
+    episodes:
+      S01E02:
+        duration: 45
+        description: Plot
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["duration"] == 120
+    show = library.find_title(conn, Kind.SERIES, "Show", None)
+    episode = library.episodes_by_season(conn, show["id"])[1][1]
+    assert (episode["duration"], episode["description"]) == (45, "Plot")
+
+
+def test_reimport_fills_blank_episode_details_for_a_new_season(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "series:\n  - name: Show\n    seasons: [1]\n")])
+    text = """
+series:
+  - name: Show
+    seasons: [1, 1]
+    episodes:
+      S02E01:
+        duration: 45
+"""
+    assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
+    assert importer.import_paths(conn, [write(tmp_path, text)]).unchanged == 1
+    show = library.find_title(conn, Kind.SERIES, "Show", None)
+    assert library.episodes_by_season(conn, show["id"])[2][0]["duration"] == 45
+
+
+def test_reimport_keeps_episode_details_edited_in_the_app(conn, tmp_path):
+    text = """
+series:
+  - name: Show
+    seasons: [1]
+    episodes:
+      S01E01:
+        duration: 45
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    show = library.find_title(conn, Kind.SERIES, "Show", None)
+    library.update_episode(conn, show["id"], 1, 1, Details(duration=50))
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.episodes_by_season(conn, show["id"])[1][0]["duration"] == 50
+
+
+def test_imported_titles_have_no_status_unless_given_one(conn, tmp_path):
+    text = "movies:\n  - name: A\n  - name: B\n    status: planned\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.find_title(conn, Kind.MOVIE, "A", None)["status"] == "none"
+    assert library.find_title(conn, Kind.MOVIE, "B", None)["status"] == "planned"
+
+
 def test_same_title_in_two_files_imports_once(conn, tmp_path):
     first = write(tmp_path, "movies:\n  - name: Film\n", "a.yaml")
     second = write(tmp_path, "movies:\n  - name: film\n", "b.yaml")
@@ -151,15 +244,19 @@ def test_main_reports_errors(tmp_path, db_path, monkeypatch, capsys):
 
 def test_ensure_inputs_creates_a_missing_folder_and_files_empty(tmp_path):
     info = tmp_path / "nested" / "info"
-    assert importer.ensure_inputs(info) == [info, info / "library.yaml"]
+    assert importer.ensure_inputs(info) == [info, info / "images", info / "library.yaml"]
     assert (info / "library.yaml").read_text() == ""
 
 
-def test_ensure_inputs_creates_a_missing_file_in_an_existing_folder(tmp_path):
+def test_ensure_inputs_only_creates_what_is_missing(tmp_path):
+    (tmp_path / "images").mkdir()
     assert importer.ensure_inputs(tmp_path) == [tmp_path / "library.yaml"]
+    (tmp_path / "images").rmdir()
+    assert importer.ensure_inputs(tmp_path) == [tmp_path / "images"]
 
 
 def test_ensure_inputs_leaves_existing_files_alone(tmp_path):
+    (tmp_path / "images").mkdir()
     path = write(tmp_path, "movies:\n  - name: Film\n")
     assert importer.ensure_inputs(tmp_path) == []
     assert path.read_text() == "movies:\n  - name: Film\n"

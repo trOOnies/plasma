@@ -3,6 +3,7 @@
 import re
 from datetime import date
 from enum import Enum
+from pathlib import PurePosixPath
 from typing import Any
 
 from pydantic import (
@@ -16,6 +17,8 @@ from pydantic import (
 
 MAX_SEASONS = 99
 MAX_EPISODES_PER_SEASON = 999
+MAX_DURATION_MINUTES = 6000
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
 
 
 def describe_errors(error: ValidationError) -> list[str]:
@@ -34,22 +37,47 @@ class Kind(str, Enum):
 
 
 class Status(str, Enum):
+    NONE = "none"
     PLANNED = "planned"
     WATCHING = "watching"
     COMPLETED = "completed"
     DROPPED = "dropped"
 
 
-class TitleInput(BaseModel):
+def parse_episode_code(value: Any) -> tuple[int, int]:
+    match = re.fullmatch(r"S(\d+)E(\d+)", str(value).strip(), re.IGNORECASE)
+    if not match:
+        raise ValueError("use an episode code such as S02E05")
+    return int(match[1]), int(match[2])
+
+
+class Details(BaseModel):
+    """What movies and episodes both have: a duration in minutes and a description."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    duration: int | None = Field(default=None, ge=1, le=MAX_DURATION_MINUTES)
+    description: str = ""
+
+    @field_validator("duration", mode="before")
+    @classmethod
+    def blank_duration_is_none(cls, value: Any) -> Any:
+        return None if value == "" else value
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def none_description_is_blank(cls, value: Any) -> Any:
+        return "" if value is None else value
+
+
+class TitleInput(Details):
     # Numbers become strings so a YAML `name: 1917` is the film, not an error.
-    model_config = ConfigDict(
-        extra="forbid", str_strip_whitespace=True, coerce_numbers_to_str=True
-    )
+    model_config = ConfigDict(coerce_numbers_to_str=True)
 
     kind: Kind
     name: str = Field(min_length=1, max_length=200)
     year: int | None = Field(default=None, ge=1870, le=2100)
-    status: Status = Status.PLANNED
+    status: Status = Status.NONE
     rating: int | None = Field(default=None, ge=1, le=10)
     notes: str = ""
     watched_on: date | None = None
@@ -91,6 +119,8 @@ class TitleInput(BaseModel):
             raise ValueError("seasons only apply to series")
         if self.kind is Kind.SERIES and self.watched_on:
             raise ValueError("watched_on only applies to movies")
+        if self.kind is Kind.SERIES and self.duration:
+            raise ValueError("duration only applies to movies, so set it on each episode")
         return self
 
 
@@ -98,22 +128,41 @@ class ImportEntry(TitleInput):
     """A title in an info/ file, which can also say how far the user has got."""
 
     watched_through: tuple[int, int] | None = None
+    image: str | None = None
+    episodes: dict[tuple[int, int], Details] = Field(default_factory=dict)
 
     @field_validator("watched_through", mode="before")
     @classmethod
     def parse_episode_code(cls, value: Any) -> Any:
+        return None if value is None else parse_episode_code(value)
+
+    @field_validator("episodes", mode="before")
+    @classmethod
+    def parse_episode_keys(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        return {parse_episode_code(code): details for code, details in value.items()}
+
+    @field_validator("image")
+    @classmethod
+    def check_image(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        match = re.fullmatch(r"S(\d+)E(\d+)", str(value).strip(), re.IGNORECASE)
-        if not match:
-            raise ValueError("use an episode code such as S02E05")
-        return int(match[1]), int(match[2])
+        path = PurePosixPath(value)
+        if path.name != value or "\\" in value:
+            raise ValueError("use a file name from info/images, without any folders")
+        if path.suffix.lower() not in IMAGE_SUFFIXES:
+            raise ValueError(f"use one of these image types: {', '.join(IMAGE_SUFFIXES)}")
+        return value
 
     @model_validator(mode="after")
-    def check_watched_through(self) -> "ImportEntry":
-        if self.watched_through is None:
-            return self
-        season, number = self.watched_through
-        if not (1 <= season <= len(self.seasons) and 1 <= number <= self.seasons[season - 1]):
+    def check_episodes_are_listed(self) -> "ImportEntry":
+        if self.watched_through and not self._is_listed(*self.watched_through):
             raise ValueError("watched_through is not an episode listed in seasons")
+        for season, number in self.episodes:
+            if not self._is_listed(season, number):
+                raise ValueError(f"episodes: S{season:02}E{number:02} is not listed in seasons")
         return self
+
+    def _is_listed(self, season: int, number: int) -> bool:
+        return 1 <= season <= len(self.seasons) and 1 <= number <= self.seasons[season - 1]
