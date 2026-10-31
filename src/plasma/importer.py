@@ -1,0 +1,142 @@
+"""Load titles from the YAML files in info/ into the library.
+
+A title's tracking fields (status, watch date, progress) are read the first time
+it is imported. After that the app owns them, so a re-import cannot undo anything
+done in the web UI. Re-imports only add new titles, add newly listed episodes, and
+fill in a rating or notes that are still blank.
+
+The format is documented in the README, and demo.yaml is a working example.
+"""
+
+import argparse
+import sqlite3
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+from pydantic import ValidationError
+
+from plasma import library
+from plasma.db import connect
+from plasma.models import ImportEntry, Kind, describe_errors
+
+SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES}
+
+
+class ImportFileError(Exception):
+    """One or more problems in the input, as a list of readable messages."""
+
+    def __init__(self, problems: list[str]):
+        super().__init__("\n".join(problems))
+        self.problems = problems
+
+
+@dataclass
+class ImportResult:
+    added: int = 0
+    updated: int = 0
+    unchanged: int = 0
+
+
+def parse_file(path: Path) -> list[ImportEntry]:
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise ImportFileError([f"{path}: invalid YAML: {error}"]) from error
+    if document is None:
+        return []
+    if not isinstance(document, dict) or set(document) - set(SECTIONS):
+        raise ImportFileError([f"{path}: top level must only have 'movies' and 'series' lists"])
+
+    entries, problems = [], []
+    for section, kind in SECTIONS.items():
+        items = document.get(section) or []
+        if not isinstance(items, list):
+            problems.append(f"{path}: '{section}' must be a list")
+            continue
+        for index, item in enumerate(items):
+            where = f"{path}: {section}[{index}]"
+            if not isinstance(item, dict):
+                problems.append(f"{where}: expected a mapping with at least a name")
+                continue
+            try:
+                entries.append(ImportEntry(**{**item, "kind": kind}))
+            except ValidationError as error:
+                problems.extend(f"{where}: {message}" for message in describe_errors(error))
+    if problems:
+        raise ImportFileError(problems)
+    return entries
+
+
+def yaml_files(directory: Path) -> list[Path]:
+    return sorted(path for path in directory.iterdir() if path.suffix in (".yaml", ".yml"))
+
+
+def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> ImportResult:
+    result = ImportResult()
+    for entry in entries:
+        existing = library.find_title(conn, entry.kind, entry.name, entry.year)
+        if existing is None:
+            title_id = library.create_title(
+                conn, entry.model_copy(update={"watched_through": None})
+            )
+            if entry.watched_through:
+                library.mark_through(conn, title_id, *entry.watched_through)
+            result.added += 1
+            continue
+        grew = library.extend_seasons(conn, existing["id"], entry.seasons)
+        filled = library.fill_blanks(conn, existing["id"], entry.rating, entry.notes)
+        if grew or filled:
+            result.updated += 1
+        else:
+            result.unchanged += 1
+    return result
+
+
+def import_paths(conn: sqlite3.Connection, paths: list[Path]) -> ImportResult:
+    """Import files as one transaction. Any problem in any file means nothing is written."""
+    entries, problems = [], []
+    for path in paths:
+        try:
+            entries.extend(parse_file(path))
+        except ImportFileError as error:
+            problems.extend(error.problems)
+    if problems:
+        raise ImportFileError(problems)
+    with conn:
+        return import_entries(conn, entries)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Import movies and series from YAML files.")
+    parser.add_argument("directory", type=Path, help="folder holding the YAML files")
+    args = parser.parse_args(argv)
+
+    if not args.directory.is_dir():
+        print(f"error: {args.directory} is not a folder", file=sys.stderr)
+        return 1
+    paths = yaml_files(args.directory)
+    if not paths:
+        print(f"No .yaml or .yml files in {args.directory}, nothing to import.")
+        return 0
+
+    conn = connect()
+    try:
+        result = import_paths(conn, paths)
+    except ImportFileError as error:
+        for problem in error.problems:
+            print(f"error: {problem}", file=sys.stderr)
+        print("Nothing was imported.", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    print(
+        f"{len(paths)} file(s): {result.added} added, {result.updated} updated, "
+        f"{result.unchanged} unchanged."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

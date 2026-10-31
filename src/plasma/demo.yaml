@@ -1,0 +1,45 @@
+# Demo library for `make seed`. Also a reference for writing your own files in info/.
+
+movies:
+  - name: Arrival
+    year: 2016
+    status: completed
+    rating: 9
+    watched_on: 2024-03-02
+    notes: Worth a rewatch once you know the ending.
+  - name: Spirited Away
+    year: 2001
+    status: completed
+    rating: 10
+  - name: 1917   # A bare number works as a name.
+    year: 2019
+    status: completed
+    rating: 8
+  - name: Dune Part Two
+    year: 2024
+  - name: Past Lives
+    year: 2023
+
+series:
+  - name: Breaking Bad
+    year: 2008
+    seasons: [7, 13, 13, 13, 16]   # Episodes per season.
+    status: completed              # Marks every episode watched.
+    rating: 10
+  - name: The Wire
+    year: 2002
+    seasons: [13, 12, 12, 13, 10]
+    watched_through: S02E04        # Marks everything up to this episode watched.
+  - name: Severance
+    year: 2022
+    seasons: [9, 10]
+    watched_through: S01E09
+    rating: 9
+  - name: Lost
+    year: 2004
+    seasons: [25, 24, 23, 14, 17, 18]
+    watched_through: S02E10
+    status: dropped                # Stays dropped until you change it.
+  - name: The Bear
+    year: 2022
+    seasons: [8, 10, 10]
