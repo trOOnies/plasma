@@ -1,5 +1,10 @@
 # Demo library for `make seed`. Also a reference for writing your own files in info/.
 
+platforms:
+  - name: HBO Max
+    url: https://www.hbomax.com
+  - name: PlayStation 5   # A website is optional.
+
 movies:
   - name: Arrival
     year: 2016

@@ -56,9 +56,14 @@ Both of these folders are gitignored:
 
 The app needs the `info/` folder, an `info/images/` folder and an `info/library.yaml` file. If any of them is missing, `make serve` and `make import` create it empty. `make serve` then stops with an error explaining why, so add your titles, run `make import` and start it again. An empty `library.yaml` is valid, so the next `make serve` starts normally.
 
-Every `.yaml` or `.yml` file in `info/` is imported. Each one can have `movies`, `series` and `games` lists, in any combination:
+Every `.yaml` or `.yml` file in `info/` is imported. Each one can have `platforms`, `movies`, `series` and `games` lists, in any combination:
 
 ```yaml
+platforms:
+  - name: Netflix                  # Required.
+    url: https://www.netflix.com   # Optional. Must start with http:// or https://.
+  - name: PlayStation 5
+
 movies:
   - name: Arrival          # Required.
     year: 2016
@@ -110,9 +115,10 @@ Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
 Importing is safe to repeat. Status, watch dates, progress and `owned` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
 
-A repeat import does these four things and nothing else:
+A repeat import does these five things and nothing else:
 
 - Adds new titles.
+- Adds new platforms, and fills in a platform's blank `url`.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
 - Fills in a rating, duration, hours played, producer, release date, description, notes or platforms that are still blank, for titles and episodes.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.

@@ -33,7 +33,7 @@
       </div>
       <div class="help-card">
         <h3>📡 Platforms</h3>
-        <p>Your streaming services and game stores live in <a href="/platforms">one central list</a>.</p>
+        <p>Your streaming services, game stores and consoles live in <a href="/platforms">one central list</a>.</p>
       </div>
       <div class="help-card">
         <h3>➕ New stuff</h3>
@@ -117,7 +117,8 @@
 
   <section class="help-section" id="platforms">
     <h2>📡 Where to watch</h2>
-    <p>Add your services and stores on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a title. Each platform has a page listing everything you've got on it. 🎉</p>
+    <p>Add your services, stores and consoles on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a title. Each platform has a page listing everything you've got on it. 🎉</p>
+    <p>Got a long list? Put it under <code>platforms:</code> in <code>info/library.yaml</code> and run <code>make import</code>.</p>
   </section>
 
   <section class="help-section" id="import">
@@ -125,7 +126,12 @@
     <p>List your titles in <code>info/library.yaml</code> and run <code>make import</code>.</p>
     <details class="help-details">
       <summary>📄 Show me an example</summary>
-      <pre><code>movies:
+      <pre><code>platforms:
+  - name: Netflix
+    url: https://www.netflix.com
+  - name: PlayStation 5
+
+movies:
   - name: Arrival
     year: 2016
     status: completed

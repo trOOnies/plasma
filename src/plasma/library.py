@@ -457,6 +457,15 @@ def create_platform(conn: sqlite3.Connection, data: PlatformInput) -> int:
         raise DuplicatePlatformError(data.name) from error
 
 
+def fill_platform(conn: sqlite3.Connection, data: PlatformInput) -> bool:
+    """Add a platform, or fill in its URL if that's still blank. Returns whether it's new."""
+    added = conn.execute(
+        "INSERT OR IGNORE INTO platforms (name, url) VALUES (?, ?)", (data.name, data.url)
+    ).rowcount
+    conn.execute("UPDATE platforms SET url = ? WHERE name = ? AND url = ''", (data.url, data.name))
+    return added > 0
+
+
 def update_platform(conn: sqlite3.Connection, platform_id: int, data: PlatformInput) -> None:
     try:
         conn.execute(

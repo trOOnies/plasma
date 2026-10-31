@@ -399,3 +399,56 @@ def test_seed_loads_demo_file_and_is_repeatable(conn, db_path, monkeypatch, caps
     assert (wire["status"], wire["episodes_watched"]) == ("watching", 17)
     lost = library.find_title(conn, Kind.SERIES, "Lost", 2004)
     assert lost["status"] == "dropped"
+
+
+def test_platforms_list_adds_platforms_no_title_uses(conn, tmp_path):
+    text = "platforms:\n  - name: Netflix\n    url: https://www.netflix.com\n  - name: Wii\n"
+    result = importer.import_paths(conn, [write(tmp_path, text)])
+    assert result.platforms_added == 2 and result.added == 0
+    platforms = {row["name"]: row["url"] for row in library.list_platforms(conn)}
+    assert platforms == {"Netflix": "https://www.netflix.com", "Wii": ""}
+
+
+def test_platforms_list_fills_blank_urls_and_keeps_the_rest(conn, tmp_path):
+    first = "platforms:\n  - name: Steam\n  - name: Netflix\n    url: https://old.example\n"
+    importer.import_paths(conn, [write(tmp_path, first)])
+    second = (
+        "platforms:\n  - name: steam\n    url: https://store.steampowered.com\n"
+        "  - name: Netflix\n    url: https://new.example\n"
+    )
+    assert importer.import_paths(conn, [write(tmp_path, second)]).platforms_added == 0
+    platforms = {row["name"]: row["url"] for row in library.list_platforms(conn)}
+    assert platforms == {"Netflix": "https://old.example", "Steam": "https://store.steampowered.com"}
+
+
+def test_platforms_list_and_titles_share_platforms(conn, tmp_path):
+    text = (
+        "platforms:\n  - name: Steam\n    url: https://store.steampowered.com\n"
+        "games:\n  - name: Hades\n    platforms: [Steam]\n"
+    )
+    importer.import_paths(conn, [write(tmp_path, text)])
+    [platform] = library.list_platforms(conn)
+    assert platform["title_count"] == 1 and platform["url"]
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("platforms: Netflix\n", "'platforms' must be a list"),
+        ("platforms:\n  - Netflix\n", r"platforms\[0\]: expected a mapping"),
+        ("platforms:\n  - url: https://example.com\n", r"platforms\[0\]: name"),
+        ("platforms:\n  - name: Bad\n    url: javascript:alert(1)\n", r"platforms\[0\]: url"),
+        ("platforms:\n  - name: Bad\n    colour: red\n", r"platforms\[0\]: colour"),
+    ],
+)
+def test_bad_platforms_are_reported(conn, tmp_path, text, message):
+    with pytest.raises(importer.ImportFileError, match=message):
+        importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.list_platforms(conn) == []
+
+
+def test_main_reports_new_platforms(conn, tmp_path, monkeypatch, capsys, db_path):
+    monkeypatch.setenv("PLASMA_DB", str(db_path))
+    write(tmp_path, "platforms:\n  - name: Wii\n")
+    assert importer.main([str(tmp_path)]) == 0
+    assert "1 new platform(s)" in capsys.readouterr().out

@@ -5,6 +5,8 @@ time it is imported. After that the app owns them, so a re-import cannot undo an
 done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
 in a rating, duration, hours played, producer, release date, description, notes or
 platforms that are still blank, and apply the image, which can only be set from info/.
+The platforms list adds services and consoles that no title uses yet, and fills in any
+URL that is still blank.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -20,13 +22,14 @@ from pydantic import ValidationError
 
 from plasma import library
 from plasma.db import connect
-from plasma.models import ImportEntry, Kind, describe_errors
+from plasma.models import ImportEntry, Kind, PlatformInput, describe_errors
 
 INFO_DIR = Path("info")
 IMAGES_FOLDER = "images"
 REQUIRED_FOLDERS = (IMAGES_FOLDER,)
 REQUIRED_FILES = ("library.yaml",)
 SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES, "games": Kind.GAME}
+PLATFORMS_SECTION = "platforms"
 
 
 class ImportFileError(Exception):
@@ -54,6 +57,7 @@ class ImportResult:
     added: int = 0
     updated: int = 0
     unchanged: int = 0
+    platforms_added: int = 0
 
 
 def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
@@ -75,18 +79,35 @@ def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
     return created
 
 
-def parse_file(path: Path) -> list[ImportEntry]:
+def parse_platforms(path: Path, items: object) -> tuple[list[PlatformInput], list[str]]:
+    if not isinstance(items, list):
+        return [], [f"{path}: '{PLATFORMS_SECTION}' must be a list"]
+    platforms, problems = [], []
+    for index, item in enumerate(items):
+        where = f"{path}: {PLATFORMS_SECTION}[{index}]"
+        if not isinstance(item, dict):
+            problems.append(f"{where}: expected a mapping with at least a name")
+            continue
+        try:
+            platforms.append(PlatformInput(**item))
+        except ValidationError as error:
+            problems.extend(f"{where}: {message}" for message in describe_errors(error))
+    return platforms, problems
+
+
+def parse_file(path: Path) -> tuple[list[PlatformInput], list[ImportEntry]]:
     try:
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as error:
         raise ImportFileError([f"{path}: invalid YAML: {error}"]) from error
     if document is None:
-        return []
-    if not isinstance(document, dict) or set(document) - set(SECTIONS):
-        message = "top level must only have 'movies', 'series' and 'games' lists"
+        return [], []
+    if not isinstance(document, dict) or set(document) - {*SECTIONS, PLATFORMS_SECTION}:
+        message = "top level must only have 'platforms', 'movies', 'series' and 'games' lists"
         raise ImportFileError([f"{path}: {message}"])
 
-    entries, problems = [], []
+    platforms, problems = parse_platforms(path, document.get(PLATFORMS_SECTION) or [])
+    entries = []
     for section, kind in SECTIONS.items():
         items = document.get(section) or []
         if not isinstance(items, list):
@@ -109,7 +130,7 @@ def parse_file(path: Path) -> list[ImportEntry]:
             entries.append(entry)
     if problems:
         raise ImportFileError(problems)
-    return entries
+    return platforms, entries
 
 
 def yaml_files(directory: Path) -> list[Path]:
@@ -124,8 +145,12 @@ def _fill_episodes(conn: sqlite3.Connection, title_id: int, entry: ImportEntry) 
     return any(changes)
 
 
-def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> ImportResult:
+def import_entries(
+    conn: sqlite3.Connection, entries: list[ImportEntry], platforms: list[PlatformInput]
+) -> ImportResult:
     result = ImportResult()
+    for platform in platforms:
+        result.platforms_added += library.fill_platform(conn, platform)
     for entry in entries:
         existing = library.find_title(conn, entry.kind, entry.name, entry.year)
         if existing is None:
@@ -168,16 +193,19 @@ def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> Impo
 
 def import_paths(conn: sqlite3.Connection, paths: list[Path]) -> ImportResult:
     """Import files as one transaction. Any problem in any file means nothing is written."""
-    entries, problems = [], []
+    platforms, entries, problems = [], [], []
     for path in paths:
         try:
-            entries.extend(parse_file(path))
+            file_platforms, file_entries = parse_file(path)
         except ImportFileError as error:
             problems.extend(error.problems)
+            continue
+        platforms.extend(file_platforms)
+        entries.extend(file_entries)
     if problems:
         raise ImportFileError(problems)
     with conn:
-        return import_entries(conn, entries)
+        return import_entries(conn, entries, platforms)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -206,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         conn.close()
     print(
         f"{len(paths)} file(s): {result.added} added, {result.updated} updated, "
-        f"{result.unchanged} unchanged."
+        f"{result.unchanged} unchanged, {result.platforms_added} new platform(s)."
     )
     return 0
 

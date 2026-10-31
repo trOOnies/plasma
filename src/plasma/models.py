@@ -135,7 +135,10 @@ class TitleInput(Details):
 
 
 class PlatformInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    # Numbers become strings so a YAML `name: 1917` works, as it does for titles.
+    model_config = ConfigDict(
+        extra="forbid", str_strip_whitespace=True, coerce_numbers_to_str=True
+    )
 
     name: str = Field(min_length=1, max_length=100)
     url: str = ""
