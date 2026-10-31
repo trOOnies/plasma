@@ -2,6 +2,7 @@ import re
 import signal
 from datetime import date, timedelta
 from types import SimpleNamespace
+from xml.etree import ElementTree
 
 import pytest
 
@@ -24,6 +25,15 @@ def test_home_on_empty_library(client):
 
 def test_static_stylesheet_is_served(client):
     assert client.get("/static/style.css").status_code == 200
+
+
+def test_icon_is_served_and_shown_in_the_header_and_help(client):
+    response = client.get("/static/plasma.svg")
+    assert response.status_code == 200 and response.headers["content-type"] == "image/svg+xml"
+    ElementTree.fromstring(response.text)
+    icon = 'src="/static/plasma.svg"'
+    assert icon in client.get("/").text.split("</header>")[0]
+    assert icon in client.get("/help").text.split("</header>")[1]
 
 
 def test_home_offers_next_episode_and_returns_home(client, conn):

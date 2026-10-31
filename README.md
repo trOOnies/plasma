@@ -1,3 +1,5 @@
+<p align="center"><img src="src/plasma/static/plasma.svg" alt="" width="128" height="128"></p>
+
 # plasma
 
 Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.

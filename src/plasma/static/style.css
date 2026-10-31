@@ -280,7 +280,7 @@ input, select, textarea {
 
 .help-hero h1 { margin: 4px 0 8px; font-size: 2.3rem; }
 .help-hero p { max-width: 560px; margin: 8px auto; }
-.help-hero-emoji { font-size: 2.6rem; line-height: 1.2; }
+.help-hero-icon { display: block; margin: 0 auto 8px; }
 .help-hero-small { font-size: 0.9rem; }
 .help-jump { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
 
