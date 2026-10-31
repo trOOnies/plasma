@@ -21,6 +21,55 @@ MAX_DURATION_MINUTES = 6000
 MAX_HOURS_PLAYED = 100_000
 FAVORITES_PLAN_NAME = "Favorites"
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
+SCREEN_GENRES = (
+    "Action",
+    "Adventure",
+    "Animation",
+    "Comedy",
+    "Crime",
+    "Documentary",
+    "Drama",
+    "Family",
+    "Fantasy",
+    "Historical",
+    "Horror",
+    "Musical",
+    "Mystery",
+    "Reality",
+    "Romance",
+    "Sci-Fi",
+    "Thriller",
+    "War",
+    "Western",
+)
+GAME_GENRES = (
+    "Action",
+    "Adventure",
+    "Battle Royale",
+    "Card & Board",
+    "Fighting",
+    "Horror",
+    "Metroidvania",
+    "MOBA",
+    "Platformer",
+    "Puzzle",
+    "Racing",
+    "Roguelike",
+    "RPG",
+    "Sandbox",
+    "Shooter",
+    "Simulation",
+    "Sports",
+    "Stealth",
+    "Strategy",
+    "Survival",
+)
+# Anything that isn't a console or PC game store counts as streaming.
+CONSOLE_NAME = re.compile(
+    r"playstation|\bps[1-5]\b|xbox|nintendo|\bwii|switch|game ?boy|game ?cube|\bsega\b"
+    r"|steam|\bgog\b|epic games|\bpc\b",
+    re.IGNORECASE,
+)
 
 
 def describe_errors(error: ValidationError) -> list[str]:
@@ -45,6 +94,43 @@ class Status(str, Enum):
     WATCHING = "watching"
     COMPLETED = "completed"
     DROPPED = "dropped"
+
+
+class MultiplayerStatus(str, Enum):
+    """Multiplayer has no ending, so unlike Status it can't be completed."""
+
+    NONE = "none"
+    PLANNED = "planned"
+    WATCHING = "watching"
+    DROPPED = "dropped"
+
+
+class AgeRestriction(str, Enum):
+    ALL = "all"
+    AGE_7 = "7+"
+    AGE_13 = "13+"
+    AGE_16 = "16+"
+    AGE_18 = "18+"
+
+    @property
+    def label(self) -> str:
+        return "All ages" if self is AgeRestriction.ALL else self.value
+
+
+class PlatformKind(str, Enum):
+    STREAMING = "streaming"
+    CONSOLE = "console"
+
+    @property
+    def label(self) -> str:
+        return "Streaming Platforms" if self is PlatformKind.STREAMING else "Game Consoles"
+
+
+GENRES = {Kind.MOVIE: SCREEN_GENRES, Kind.SERIES: SCREEN_GENRES, Kind.GAME: GAME_GENRES}
+
+
+def guess_platform_kind(name: str) -> PlatformKind:
+    return PlatformKind.CONSOLE if CONSOLE_NAME.search(name) else PlatformKind.STREAMING
 
 
 def parse_episode_code(value: Any) -> tuple[int, int]:
@@ -82,6 +168,13 @@ class TitleInput(Details):
     name: str = Field(min_length=1, max_length=200)
     year: int | None = Field(default=None, ge=1870, le=2100)
     status: Status = Status.NONE
+    # A game's status above is its singleplayer status.
+    singleplayer: bool = True
+    # None means nothing has said either way yet, so a re-import may still set it.
+    multiplayer: bool | None = None
+    multiplayer_status: MultiplayerStatus = MultiplayerStatus.NONE
+    age_restriction: AgeRestriction | None = None
+    genres: list[Annotated[str, Field(min_length=1, max_length=50)]] = Field(default_factory=list)
     rating: int | None = Field(default=None, ge=1, le=10)
     hours_played: int | None = Field(default=None, ge=0, le=MAX_HOURS_PLAYED)
     producer: str = Field(default="", max_length=200)
@@ -99,18 +192,31 @@ class TitleInput(Details):
     def none_is_blank(cls, value: Any) -> Any:
         return "" if value is None else value
 
+    @field_validator("singleplayer", "multiplayer", mode="before")
+    @classmethod
+    def blank_is_false(cls, value: Any) -> Any:
+        """An unticked checkbox submits nothing, which the web form passes on as blank."""
+        return False if value == "" else value
+
+    @field_validator("age_restriction", mode="before")
+    @classmethod
+    def parse_age_restriction(cls, value: Any) -> Any:
+        """Accept the level itself, or a bare age such as 13 from YAML."""
+        if value in ("", None) or isinstance(value, AgeRestriction):
+            return value or None
+        text = str(value).strip().lower()
+        return f"{text}+" if text.isdecimal() else text
+
+    @field_validator("genres", mode="before")
+    @classmethod
+    def single_genre_is_a_list(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
+
     @field_validator("seasons", mode="before")
     @classmethod
     def parse_seasons(cls, value: Any) -> Any:
-        """Accept a YAML list, a bare count, or text such as "7, 13, 13"."""
-        if isinstance(value, int) and not isinstance(value, bool):
-            return [value]
-        if isinstance(value, str):
-            parts = [part for part in re.split(r"[,\s]+", value) if part]
-            if not all(part.isdecimal() for part in parts):
-                raise ValueError('use episode counts per season, such as "7, 13, 13"')
-            return [int(part) for part in parts]
-        return value
+        """Accept a YAML list or a bare count."""
+        return [value] if isinstance(value, int) and not isinstance(value, bool) else value
 
     @field_validator("seasons")
     @classmethod
@@ -131,7 +237,34 @@ class TitleInput(Details):
             raise ValueError("watched_on doesn't apply to series")
         if self.kind is Kind.SERIES and self.duration:
             raise ValueError("duration only applies to movies, so set it on each episode")
+        self._check_game_modes()
+        self._check_genres()
         return self
+
+    def _check_game_modes(self) -> None:
+        if self.kind is not Kind.GAME:
+            none = MultiplayerStatus.NONE
+            if not self.singleplayer or self.multiplayer or self.multiplayer_status is not none:
+                raise ValueError("singleplayer and multiplayer only apply to games")
+            return
+        if not self.singleplayer and not self.multiplayer:
+            raise ValueError("a game needs singleplayer, multiplayer or both")
+        if not self.singleplayer and (self.status is not Status.NONE or self.watched_on):
+            raise ValueError("status and watched_on need singleplayer")
+        if not self.multiplayer and self.multiplayer_status is not MultiplayerStatus.NONE:
+            raise ValueError("multiplayer_status needs multiplayer")
+
+    def _check_genres(self) -> None:
+        known = {genre.casefold(): genre for genre in GENRES[self.kind]}
+        unknown = [genre for genre in self.genres if genre.casefold() not in known]
+        if unknown:
+            allowed = ", ".join(GENRES[self.kind])
+            raise ValueError(f"unknown genre {unknown[0]}, use one of: {allowed}")
+        self.genres = list(dict.fromkeys(known[genre.casefold()] for genre in self.genres))
+
+
+class SeasonInput(BaseModel):
+    episodes: int = Field(ge=1, le=MAX_EPISODES_PER_SEASON)
 
 
 class PlatformInput(BaseModel):
@@ -142,6 +275,12 @@ class PlatformInput(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     url: str = ""
+    kind: PlatformKind | None = None
+
+    @model_validator(mode="after")
+    def guess_missing_kind(self) -> "PlatformInput":
+        self.kind = self.kind or guess_platform_kind(self.name)
+        return self
 
     @field_validator("url")
     @classmethod
@@ -182,10 +321,10 @@ class ImportEntry(TitleInput):
     def parse_episode_code(cls, value: Any) -> Any:
         return None if value is None else parse_episode_code(value)
 
-    @field_validator("status", mode="before")
+    @field_validator("status", "multiplayer_status", mode="before")
     @classmethod
     def playing_means_watching(cls, value: Any) -> Any:
-        return Status.WATCHING if value == "playing" else value
+        return "watching" if value == "playing" else value
 
     @field_validator("platforms", mode="before")
     @classmethod

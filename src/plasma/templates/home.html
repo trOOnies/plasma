@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, release_row, title_row %}
+{% from "_macros.html" import kind_icon, progress, release_row, title_row %}
 {% block content %}
 <section class="stats">
   <div><strong>{{ stats.movies_watched }}</strong> movies watched</div>
@@ -64,8 +64,9 @@
 <ul class="rows">
   {% for title in planned %}
   <li>
+    {{ kind_icon(title.kind) }}
     <a href="/titles/{{ title.id }}">{{ title.name }}</a>
-    <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}</span>
+    {% if title.year %}<span class="muted">{{ title.year }}</span>{% endif %}
   </li>
   {% endfor %}
 </ul>

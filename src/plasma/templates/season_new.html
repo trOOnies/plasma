@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}New season · {{ title.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/titles/{{ title.id }}">{{ title.name }}</a>
+</nav>
+<h1>New season</h1>
+<p class="muted">This will be season {{ season }}. You can fill in episode details afterwards.</p>
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form class="stacked" method="post" action="/titles/{{ title.id }}/seasons">
+  <label>Number of episodes
+    <input name="episodes" type="number" min="1" max="999" value="{{ episodes }}" required autofocus>
+  </label>
+  <div class="actions">
+    <button class="primary">Add season</button>
+    <a class="button" href="/titles/{{ title.id }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

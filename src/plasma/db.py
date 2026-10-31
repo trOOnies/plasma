@@ -4,17 +4,30 @@ import os
 import sqlite3
 from pathlib import Path
 
+from plasma.models import PlatformKind, guess_platform_kind
+
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
-TITLES_COLUMNS = """
+MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
+        CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
+AGE_RESTRICTION_COLUMN = """TEXT
+        CHECK (age_restriction IN ('all', '7+', '13+', '16+', '18+'))"""
+PLATFORM_KIND_COLUMN = """TEXT NOT NULL DEFAULT 'streaming'
+        CHECK (kind IN ('streaming', 'console'))"""
+
+TITLES_COLUMNS = f"""
     id INTEGER PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('movie', 'series', 'game')),
     name TEXT NOT NULL,
     year INTEGER,
     status TEXT NOT NULL DEFAULT 'none'
         CHECK (status IN ('none', 'planned', 'watching', 'completed', 'dropped')),
+    singleplayer INTEGER NOT NULL DEFAULT 1,
+    multiplayer INTEGER,
+    multiplayer_status {MULTIPLAYER_STATUS_COLUMN},
+    age_restriction {AGE_RESTRICTION_COLUMN},
     rating INTEGER CHECK (rating BETWEEN 1 AND 10),
     duration INTEGER,
     release_date TEXT,
@@ -51,13 +64,20 @@ CREATE TABLE IF NOT EXISTS episodes (
 CREATE TABLE IF NOT EXISTS platforms (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    url TEXT NOT NULL DEFAULT ''
+    url TEXT NOT NULL DEFAULT '',
+    kind {PLATFORM_KIND_COLUMN}
 );
 
 CREATE TABLE IF NOT EXISTS title_platforms (
     title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
     platform_id INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE,
     PRIMARY KEY (title_id, platform_id)
+);
+
+CREATE TABLE IF NOT EXISTS title_genres (
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    genre TEXT NOT NULL,
+    PRIMARY KEY (title_id, genre)
 );
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -85,6 +105,13 @@ ADDED_COLUMNS = {
         "favorite": "INTEGER NOT NULL DEFAULT 0",
         "owned": "INTEGER NOT NULL DEFAULT 0",
         "image": "TEXT",
+        "singleplayer": "INTEGER NOT NULL DEFAULT 1",
+        "multiplayer": "INTEGER",
+        "multiplayer_status": MULTIPLAYER_STATUS_COLUMN,
+        "age_restriction": AGE_RESTRICTION_COLUMN,
+    },
+    "platforms": {
+        "kind": PLATFORM_KIND_COLUMN,
     },
     "episodes": {
         "duration": "INTEGER",
@@ -95,7 +122,8 @@ ADDED_COLUMNS = {
 
 COPIED_COLUMNS = (
     "id, kind, name, year, rating, duration, release_date, hours_played, producer,"
-    " description, notes, favorite, owned, image, watched_on, updated_at"
+    " description, notes, favorite, owned, image, watched_on, updated_at,"
+    " singleplayer, multiplayer, multiplayer_status, age_restriction"
 )
 
 
@@ -115,7 +143,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if _version(conn) < SCHEMA_VERSION:
-        if _has_titles(conn):
+        if _has_table(conn, "titles"):
             _upgrade(conn)
         conn.executescript(SCHEMA)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -126,16 +154,12 @@ def _version(conn: sqlite3.Connection) -> int:
     return conn.execute("PRAGMA user_version").fetchone()[0]
 
 
-def _has_titles(conn: sqlite3.Connection) -> bool:
-    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'titles'"
-    return conn.execute(query).fetchone() is not None
-
-
 def _add_missing_columns(conn: sqlite3.Connection) -> None:
     for table, columns in ADDED_COLUMNS.items():
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, definition in columns.items():
-            if name not in existing:
+            # A table that isn't there yet comes from SCHEMA, already complete.
+            if existing and name not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
@@ -155,6 +179,31 @@ def _rebuild_titles(conn: sqlite3.Connection, version: int) -> None:
     conn.execute("ALTER TABLE titles_new RENAME TO titles")
 
 
+def _sort_platforms(conn: sqlite3.Connection) -> None:
+    """Tell consoles from streaming services by name, or by only being used for games."""
+    rows = conn.execute(
+        "SELECT p.id, p.name, COUNT(t.id) AS uses, COALESCE(SUM(t.kind = 'game'), 0) AS game_uses"
+        " FROM platforms p"
+        " LEFT JOIN title_platforms tp ON tp.platform_id = p.id"
+        " LEFT JOIN titles t ON t.id = tp.title_id"
+        " GROUP BY p.id"
+    ).fetchall()
+    conn.executemany(
+        "UPDATE platforms SET kind = ? WHERE id = ?",
+        [
+            (PlatformKind.CONSOLE.value, row["id"])
+            for row in rows
+            if guess_platform_kind(row["name"]) is PlatformKind.CONSOLE
+            or (row["uses"] and row["uses"] == row["game_uses"])
+        ],
+    )
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
+    return conn.execute(query, (name,)).fetchone() is not None
+
+
 def _upgrade(conn: sqlite3.Connection) -> None:
     """Bring an older database up to date in one transaction.
 
@@ -172,6 +221,8 @@ def _upgrade(conn: sqlite3.Connection) -> None:
             _add_missing_columns(conn)
             if version < 3:
                 _rebuild_titles(conn, version)
+            if version < 5 and _has_table(conn, "title_platforms"):
+                _sort_platforms(conn)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     finally:
         conn.execute("PRAGMA foreign_keys = ON")

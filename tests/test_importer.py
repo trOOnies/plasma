@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from plasma import importer, library, seed
-from plasma.models import Details, Kind
+from plasma.models import Details, Kind, TitleInput
 
 
 def write(directory: Path, text: str, name: str = "library.yaml") -> Path:
@@ -393,8 +393,8 @@ def test_seed_loads_demo_file_and_is_repeatable(conn, db_path, monkeypatch, caps
     monkeypatch.setenv("PLASMA_DB", str(db_path))
     assert seed.main() == 0
     assert seed.main() == 0
-    assert "12 already present" in capsys.readouterr().out
-    assert len(library.list_titles(conn)) == 12
+    assert "13 already present" in capsys.readouterr().out
+    assert len(library.list_titles(conn)) == 13
     wire = library.find_title(conn, Kind.SERIES, "The Wire", 2002)
     assert (wire["status"], wire["episodes_watched"]) == ("watching", 17)
     lost = library.find_title(conn, Kind.SERIES, "Lost", 2004)
@@ -452,3 +452,79 @@ def test_main_reports_new_platforms(conn, tmp_path, monkeypatch, capsys, db_path
     write(tmp_path, "platforms:\n  - name: Wii\n")
     assert importer.main([str(tmp_path)]) == 0
     assert "1 new platform(s)" in capsys.readouterr().out
+
+
+def test_import_reads_game_modes_genres_and_age(conn, tmp_path):
+    path = write(
+        tmp_path,
+        """
+games:
+  - name: Hades
+    singleplayer: false
+    multiplayer: true
+    multiplayer_status: playing
+    genres: [roguelike]
+    age_restriction: 13
+""",
+    )
+    importer.import_paths(conn, [path])
+    title = library.list_titles(conn)[0]
+    assert (title["singleplayer"], title["multiplayer"]) == (0, 1)
+    assert title["multiplayer_status"] == "watching"
+    assert title["age_restriction"] == "13+"
+    assert library.title_genres(conn, title["id"]) == ["Roguelike"]
+
+
+def test_import_rejects_a_completed_multiplayer(conn, tmp_path):
+    path = write(
+        tmp_path,
+        """
+games:
+  - name: Hades
+    multiplayer: true
+    multiplayer_status: completed
+""",
+    )
+    with pytest.raises(importer.ImportFileError, match="multiplayer_status"):
+        importer.import_paths(conn, [path])
+
+
+def test_reimport_fills_new_details_on_an_existing_game(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "games:\n  - name: Hades\n")])
+    text = """
+games:
+  - name: Hades
+    multiplayer: true
+    multiplayer_status: planned
+    genres: [RPG]
+    age_restriction: 16+
+"""
+    assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
+    title = library.list_titles(conn)[0]
+    assert (title["multiplayer"], title["multiplayer_status"]) == (1, "planned")
+    assert title["age_restriction"] == "16+"
+    assert library.title_genres(conn, title["id"]) == ["RPG"]
+    assert importer.import_paths(conn, [write(tmp_path, text)]).unchanged == 1
+
+
+def test_reimport_does_not_undo_a_choice_made_in_the_app(conn, tmp_path):
+    text = "games:\n  - name: Hades\n    multiplayer: true\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    title = library.list_titles(conn)[0]
+    data = TitleInput(kind="game", name="Hades", multiplayer=False)
+    library.update_title(conn, title["id"], data)
+    assert importer.import_paths(conn, [write(tmp_path, text)]).unchanged == 1
+    assert library.list_titles(conn)[0]["multiplayer"] == 0
+
+
+def test_import_reads_or_guesses_platform_kinds(conn, tmp_path):
+    text = """
+platforms:
+  - name: Netflix
+  - name: Steam
+  - name: Cloud Thing
+    kind: console
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    kinds = {p["name"]: p["kind"] for p in library.list_platforms(conn)}
+    assert kinds == {"Netflix": "streaming", "Steam": "console", "Cloud Thing": "console"}

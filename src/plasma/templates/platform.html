@@ -6,6 +6,7 @@
   <a href="/platforms">Platforms</a>
 </nav>
 <h1>{{ platform.name }}</h1>
+<p class="muted">{{ {"streaming": "Streaming Platform", "console": "Game Console"}[platform.kind] }}</p>
 {% if platform.url %}<p><a href="{{ platform.url }}" rel="noreferrer">{{ platform.url }}</a></p>{% endif %}
 
 {% if titles %}
@@ -25,6 +26,13 @@
 <form class="stacked" method="post" action="/platforms/{{ platform.id }}">
   <label>Name
     <input name="name" value="{{ form.name }}" required maxlength="100">
+  </label>
+  <label>Type
+    <select name="kind">
+      {% for kind in platform_kinds %}
+      <option value="{{ kind.value }}" {% if form.kind == kind.value %}selected{% endif %}>{{ kind.label }}</option>
+      {% endfor %}
+    </select>
   </label>
   <label>Website (optional)
     <input name="url" type="url" value="{{ form.url }}">

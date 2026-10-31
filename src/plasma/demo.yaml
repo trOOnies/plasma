@@ -3,7 +3,9 @@
 platforms:
   - name: HBO Max
     url: https://www.hbomax.com
+    kind: streaming       # Or console. Guessed from the name if left out.
   - name: PlayStation 5   # A website is optional.
+    kind: console
 
 movies:
   - name: Arrival
@@ -14,6 +16,8 @@ movies:
     watched_on: 2024-03-02
     release_date: 2016-11-11
     duration: 116
+    genres: [Drama, Sci-Fi]        # Pick from the genres in the app's form.
+    age_restriction: 13+           # all, 7+, 13+, 16+ or 18+.
     description: A linguist is asked to talk to the aliens who have just landed.
     notes: Worth a rewatch once you know the ending.
   - name: Spirited Away
@@ -37,6 +41,8 @@ series:
     seasons: [7, 13, 13, 13, 16]   # Episodes per season.
     status: completed              # Marks every episode watched.
     rating: 10
+    genres: [Crime, Drama, Thriller]
+    age_restriction: 18+
   - name: The Wire
     year: 2002
     platforms: [HBO Max]           # Created on the Platforms tab if it's new.
@@ -66,7 +72,9 @@ games:
     year: 2020
     producer: Supergiant Games
     owned: true                    # Games only.
-    status: playing
+    status: playing                # The singleplayer status.
+    genres: [Action, Roguelike]
+    age_restriction: 13+
     hours_played: 42               # Whole hours.
     platforms: [Steam]
   - name: Celeste
@@ -74,3 +82,12 @@ games:
     status: completed
     rating: 10
     watched_on: 2024-08-17         # The day you finished it.
+    genres: [Platformer]
+    age_restriction: 7+
+  - name: Rocket League
+    year: 2015
+    singleplayer: false            # Games are singleplayer unless you say otherwise.
+    multiplayer: true
+    multiplayer_status: playing    # Like status, but it can't be completed.
+    genres: [Sports, Racing]
+    age_restriction: all

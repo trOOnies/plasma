@@ -1,10 +1,21 @@
+import sqlite3
 from datetime import date, timedelta
 
 import pytest
 
 from conftest import movie, series
 from plasma import library
-from plasma.models import Details, Kind, PlanInput, PlatformInput, Status, TitleInput
+from plasma.models import (
+    AgeRestriction,
+    Details,
+    Kind,
+    MultiplayerStatus,
+    PlanInput,
+    PlatformInput,
+    PlatformKind,
+    Status,
+    TitleInput,
+)
 
 
 def status_of(conn, title_id):
@@ -95,7 +106,7 @@ def test_setting_completed_marks_everything_watched(conn):
 
 def test_new_season_reopens_completed_series_without_marking_it_watched(conn):
     title_id = library.create_title(conn, series(seasons=(2,), status=Status.COMPLETED))
-    library.update_title(conn, title_id, series(seasons=(2, 4), status=Status.COMPLETED))
+    assert library.add_season(conn, title_id, 4) == 2
     title = library.get_title(conn, title_id)
     assert (title["episodes_watched"], title["episodes_total"]) == (2, 6)
     assert title["status"] == "watching"
@@ -105,7 +116,8 @@ def test_new_season_reopens_completed_series_without_marking_it_watched(conn):
 def test_resizing_keeps_watch_state_of_remaining_episodes(conn):
     title_id = library.create_title(conn, series(seasons=(3, 2)))
     library.toggle_episode(conn, title_id, 2, 2)
-    library.update_title(conn, title_id, series(seasons=(4, 1)))
+    library.resize_season(conn, title_id, 1, 4)
+    library.resize_season(conn, title_id, 2, 1)
     assert library.season_counts(conn, title_id) == [4, 1]
     title = library.get_title(conn, title_id)
     assert title["episodes_watched"] == 4
@@ -672,3 +684,81 @@ def test_stats(conn):
         "average_rating": 6.5,
         "episodes_watched": 3,
     }
+
+
+def test_editing_a_series_leaves_its_seasons_alone(conn):
+    title_id = library.create_title(conn, series(seasons=(3, 2)))
+    library.update_title(conn, title_id, series("Renamed", seasons=()))
+    assert library.season_counts(conn, title_id) == [3, 2]
+
+
+def test_deleting_the_last_season_can_finish_a_series(conn):
+    title_id = library.create_title(conn, series(seasons=(2, 2)))
+    library.mark_season(conn, title_id, 1, True)
+    library.delete_last_season(conn, title_id)
+    assert library.season_counts(conn, title_id) == [2]
+    assert status_of(conn, title_id) == "completed"
+
+
+def test_game_keeps_a_status_for_each_mode(conn):
+    title_id = library.create_title(
+        conn,
+        game(
+            multiplayer=True,
+            status=Status.COMPLETED,
+            multiplayer_status=MultiplayerStatus.WATCHING,
+        ),
+    )
+    title = library.get_title(conn, title_id)
+    assert (title["status"], title["multiplayer_status"]) == ("completed", "watching")
+    library.set_multiplayer_status(conn, title_id, MultiplayerStatus.DROPPED)
+    assert status_of(conn, title_id) == "completed"
+
+
+def test_database_refuses_a_completed_multiplayer(conn):
+    title_id = library.create_title(conn, game(multiplayer=True))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE titles SET multiplayer_status = 'completed' WHERE id = ?", (title_id,))
+
+
+def test_status_filter_matches_either_game_mode(conn):
+    online = game(
+        "Online",
+        singleplayer=False,
+        multiplayer=True,
+        multiplayer_status=MultiplayerStatus.WATCHING,
+    )
+    online_id = library.create_title(conn, online)
+    library.create_title(conn, game("Idle"))
+    names = [t["name"] for t in library.list_titles(conn, status=Status.WATCHING)]
+    assert names == ["Online"]
+    names = [t["name"] for t in library.list_titles(conn, status=Status.NONE)]
+    assert names == ["Idle"]
+    library.set_multiplayer_status(conn, online_id, MultiplayerStatus.PLANNED)
+    assert library.stats(conn)["planned"] == 1
+
+
+def test_genres_and_age_restriction_filter_the_library(conn):
+    title_id = library.create_title(
+        conn, movie(genres=["drama", "Sci-Fi"], age_restriction="13+")
+    )
+    library.create_title(conn, movie("Other", genres=["Comedy"]))
+    assert library.title_genres(conn, title_id) == ["Drama", "Sci-Fi"]
+    assert [t["id"] for t in library.list_titles(conn, genre="Drama")] == [title_id]
+    matches = library.list_titles(conn, age_restriction=AgeRestriction.AGE_13)
+    assert [t["id"] for t in matches] == [title_id]
+
+
+def test_platforms_split_by_kind(conn):
+    library.create_platform(conn, PlatformInput(name="Netflix"))
+    library.create_platform(conn, PlatformInput(name="Xbox One"))
+    library.create_platform(conn, PlatformInput(name="Odd", kind="console"))
+    groups = library.platforms_by_kind(conn)
+    assert [p["name"] for p in groups[PlatformKind.STREAMING]] == ["Netflix"]
+    assert [p["name"] for p in groups[PlatformKind.CONSOLE]] == ["Odd", "Xbox One"]
+
+
+def test_new_platforms_from_a_title_take_their_kind_from_it(conn):
+    title_id = library.create_title(conn, game())
+    library.fill_title_platforms(conn, title_id, ["Arcade Box"])
+    assert library.title_platforms(conn, title_id)[0]["kind"] == "console"

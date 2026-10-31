@@ -5,14 +5,15 @@
 Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.
 
 - Track movies and series as planned, watching, completed or dropped, with ratings and notes. Titles start with no status.
-- Track games too, with the hours you've played and which ones you own.
+- Track games too, with the hours you've played and which ones you own. Singleplayer and multiplayer each keep their own status, and multiplayer can't be completed.
+- Tag titles with genres and an age restriction, then filter the library by either.
 - Group series, movies and games into plans, like playlists. A built-in Favorites plan holds everything you've marked with a heart.
-- Tick off episodes one at a time or by season. A series' status follows its progress.
+- Add seasons with New season, change them with the pencil icon, and tick off episodes one at a time or by season. A series' status follows its progress.
 - See what to watch next on the home page, and search, filter and page through the library.
 - Keep a duration, release date and description for every movie and episode.
 - See what's upcoming and what just came out on the home page.
-- Keep one central list of platforms, and record where each title can be watched.
-- Mark favorites, and show an image on each title's page.
+- Keep one central list of platforms, split into Streaming Platforms and Game Consoles, and record where each title can be watched or played.
+- Mark favorites, which go to the top of their tab, and show an image on each title's page.
 - Load your titles from YAML files in `info/`.
 
 The app's Help tab explains how to use it.
@@ -64,7 +65,9 @@ Every `.yaml` or `.yml` file in `info/` is imported. Each one can have `platform
 platforms:
   - name: Netflix                  # Required.
     url: https://www.netflix.com   # Optional. Must start with http:// or https://.
+    kind: streaming                # streaming or console. Guessed from the name if left out.
   - name: PlayStation 5
+    kind: console
 
 movies:
   - name: Arrival          # Required.
@@ -74,6 +77,8 @@ movies:
     rating: 9              # 1 to 10.
     duration: 116          # Minutes.
     release_date: 2016-11-11
+    genres: [Drama, Sci-Fi]        # From the app's genre list, which differs for games.
+    age_restriction: 13+           # all, 7+, 13+, 16+ or 18+.
     platforms: [Netflix, Prime Video]   # New names are added to the Platforms tab.
     watched_on: 2024-03-02
     description: A linguist is asked to talk to the aliens who have just landed.
@@ -98,12 +103,19 @@ series:
 games:
   - name: Hades
     year: 2020
-    status: playing                 # Or watching, which means the same thing.
+    singleplayer: true              # The default.
+    status: playing                 # The singleplayer status. Or watching, which means the same.
+    multiplayer: true               # Off by default.
+    multiplayer_status: planned     # Like status, but it can't be completed.
     hours_played: 42
     owned: true                     # Games only.
     platforms: [Steam]
     watched_on: 2024-08-17          # The day you finished it.
 ```
+
+A game needs `singleplayer`, `multiplayer` or both, and a mode that's off can't have a status.
+
+In the app, a series starts without seasons. Use **New season** on its page to add one, and the pencil icon next to a season to change its size or episode details. Only the last season can be deleted.
 
 The home page's Upcoming section shows releases in the next 90 days, and Just released shows the last 30. A series appears through its own `release_date` or any episode's, so give a new season's first episode a date to see it there.
 
@@ -117,12 +129,13 @@ Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
 Importing is safe to repeat. Status, watch dates, progress and `owned` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
 
-A repeat import does these five things and nothing else:
+A repeat import does these things and nothing else:
 
 - Adds new titles.
 - Adds new platforms, and fills in a platform's blank `url`.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
-- Fills in a rating, duration, hours played, producer, release date, description, notes or platforms that are still blank, for titles and episodes.
+- Fills in a rating, age restriction, duration, hours played, producer, release date, description, notes, genres or platforms that are still blank, for titles and episodes.
+- Turns on `multiplayer`, with its `multiplayer_status`, for a game where neither the app nor an earlier import has set it.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.
 
 To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI.

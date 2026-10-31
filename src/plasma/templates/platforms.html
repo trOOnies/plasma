@@ -2,11 +2,13 @@
 {% block title %}Platforms · Plasma{% endblock %}
 {% block content %}
 <h1>Platforms</h1>
-<p class="muted">Keep your streaming services, game stores and consoles here, then pick them on each title.</p>
+<p class="muted">Keep your streaming services here, along with your consoles and PC game stores, then pick them on each title.</p>
 
-{% if platforms %}
+{% for kind in platform_kinds %}
+<h2>{{ kind.label }}</h2>
+{% if platforms[kind] %}
 <ul class="rows">
-  {% for platform in platforms %}
+  {% for platform in platforms[kind] %}
   <li>
     <a href="/platforms/{{ platform.id }}">{{ platform.name }}</a>
     <span class="muted">{{ platform.title_count }} title{{ "" if platform.title_count == 1 else "s" }}</span>
@@ -14,8 +16,9 @@
   {% endfor %}
 </ul>
 {% else %}
-<p class="muted">No platforms yet. Add your first one below.</p>
+<p class="muted">None yet. Add your first one below.</p>
 {% endif %}
+{% endfor %}
 
 <h2>Add a platform</h2>
 {% if errors %}
@@ -26,6 +29,13 @@
 <form class="stacked" method="post" action="/platforms">
   <label>Name
     <input name="name" value="{{ form.name }}" required maxlength="100">
+  </label>
+  <label>Type
+    <select name="kind">
+      {% for kind in platform_kinds %}
+      <option value="{{ kind.value }}" {% if form.kind == kind.value %}selected{% endif %}>{{ kind.label }}</option>
+      {% endfor %}
+    </select>
   </label>
   <label>Website (optional)
     <input name="url" type="url" value="{{ form.url }}" placeholder="https://www.netflix.com">

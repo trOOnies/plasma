@@ -30,10 +30,6 @@ def test_numeric_name_is_kept_as_text():
 @pytest.mark.parametrize(
     "value, expected",
     [
-        ("7, 13, 13", [7, 13, 13]),
-        ("7 13", [7, 13]),
-        ("7,", [7]),
-        ("", []),
         (10, [10]),
         ([8, 10], [8, 10]),
     ],
@@ -42,7 +38,7 @@ def test_seasons_formats(value, expected):
     assert TitleInput(kind=Kind.SERIES, name="Show", seasons=value).seasons == expected
 
 
-@pytest.mark.parametrize("value", ["a, b", "0", "-3", "1000", ", ".join(["1"] * 100)])
+@pytest.mark.parametrize("value", ["7, 13", 0, -3, 1000, [1] * 100])
 def test_seasons_rejected(value):
     with pytest.raises(ValidationError):
         TitleInput(kind=Kind.SERIES, name="Show", seasons=value)
@@ -216,3 +212,80 @@ def test_release_date_accepts_blank_and_rejects_nonsense():
 def test_unknown_import_field_is_rejected():
     with pytest.raises(ValidationError):
         ImportEntry(kind="movie", name="Film", raiting=9)
+
+
+def game(**fields) -> TitleInput:
+    return TitleInput(kind=Kind.GAME, name="Game", **fields)
+
+
+def test_game_is_singleplayer_unless_told_otherwise():
+    assert game().singleplayer and not game().multiplayer
+
+
+@pytest.mark.parametrize(
+    "fields, message",
+    [
+        ({"singleplayer": False}, "singleplayer, multiplayer or both"),
+        ({"multiplayer_status": "watching"}, "needs multiplayer"),
+        ({"multiplayer": True, "multiplayer_status": "completed"}, "multiplayer_status"),
+        ({"singleplayer": False, "multiplayer": True, "status": "planned"}, "need singleplayer"),
+    ],
+)
+def test_game_mode_rules(fields, message):
+    with pytest.raises(ValidationError, match=message):
+        game(**fields)
+
+
+@pytest.mark.parametrize("fields", [{"multiplayer": True}, {"singleplayer": False}])
+def test_game_modes_only_apply_to_games(fields):
+    with pytest.raises(ValidationError, match="only apply to games"):
+        TitleInput(kind="movie", name="Film", **fields)
+
+
+def test_import_says_playing_for_multiplayer_too():
+    entry = ImportEntry(
+        kind="game", name="Game", multiplayer=True, multiplayer_status="playing"
+    )
+    assert entry.multiplayer_status.value == "watching"
+
+
+def test_genres_are_checked_against_the_kind():
+    assert game(genres="rpg").genres == ["RPG"]
+    assert game(genres=["RPG", "rpg"]).genres == ["RPG"]
+    with pytest.raises(ValidationError, match="unknown genre"):
+        TitleInput(kind="movie", name="Film", genres=["RPG"])
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [("", None), (None, None), (13, "13+"), ("18+", "18+"), ("All", "all")],
+)
+def test_age_restriction_formats(value, expected):
+    data = game(age_restriction=value)
+    assert (data.age_restriction.value if data.age_restriction else None) == expected
+
+
+def test_age_restriction_rejected():
+    with pytest.raises(ValidationError):
+        game(age_restriction=12)
+
+
+@pytest.mark.parametrize(
+    "name, kind",
+    [
+        ("PlayStation 5", "console"),
+        ("Steam Deck", "console"),
+        ("Wii U", "console"),
+        ("Xbox Series X|S", "console"),
+        ("Netflix", "streaming"),
+        ("Paramount+", "streaming"),
+    ],
+)
+def test_platform_kind_is_guessed_from_the_name(name, kind):
+    assert PlatformInput(name=name).kind.value == kind
+
+
+def test_platform_kind_can_be_stated():
+    assert PlatformInput(name="Xbox Cloud", kind="streaming").kind.value == "streaming"
+    with pytest.raises(ValidationError):
+        PlatformInput(name="Netflix", kind="vhs")

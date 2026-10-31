@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_label %}
 {% set series = form.kind == "series" %}
+{% set game = form.kind == "game" %}
+{% set platform_kind = "console" if game else "streaming" %}
 {% block title %}{{ "Edit" if title_id else "Add" }} · Plasma{% endblock %}
 {% block content %}
 <h1>{{ "Edit" if title_id else "Add" }} {{ form.kind }}</h1>
@@ -27,6 +29,15 @@
     <label>Rating (1–10)
       <input name="rating" type="number" min="1" max="10" value="{{ form.rating }}">
     </label>
+    <label>Age restriction
+      <select name="age_restriction">
+        <option value="">Not set</option>
+        {% for option in age_restrictions %}
+        <option value="{{ option.value }}" {% if form.age_restriction == option.value %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if not game %}
     <label>Status
       <select name="status">
         {% for option in statuses %}
@@ -34,20 +45,49 @@
         {% endfor %}
       </select>
     </label>
+    {% endif %}
   </div>
+
+  {% if game %}
+  <fieldset class="game-modes">
+    <legend>Game modes</legend>
+    <div class="game-mode">
+      <label class="check"><input type="checkbox" name="singleplayer" value="true" {% if form.singleplayer %}checked{% endif %}> Singleplayer</label>
+      <label>Singleplayer status
+        <select name="status">
+          {% for option in statuses %}
+          <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ status_label(option.value, "game") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="game-mode">
+      <label class="check"><input type="checkbox" name="multiplayer" value="true" {% if form.multiplayer %}checked{% endif %}> Multiplayer</label>
+      <label>Multiplayer status
+        <select name="multiplayer_status">
+          {% for option in multiplayer_statuses %}
+          <option value="{{ option.value }}" {% if form.multiplayer_status == option.value %}selected{% endif %}>{{ status_label(option.value, "game") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <small class="muted">A status only counts while its mode is ticked. Multiplayer can't be completed, since it has no ending.</small>
+  </fieldset>
+  {% endif %}
+
+  <fieldset class="platform-picker">
+    <legend>Genres</legend>
+    {% for genre in genre_options %}
+    <label><input type="checkbox" name="genres" value="{{ genre }}" {% if genre in (form.genres or []) %}checked{% endif %}> {{ genre }}</label>
+    {% endfor %}
+  </fieldset>
 
   {% if series %}
   <label>Release date
     <input name="release_date" type="date" value="{{ form.release_date }}">
     <small class="muted">When the series first came out. For a new season, set a date on its first episode.</small>
   </label>
-  <label>Episodes per season
-    <input name="seasons" value="{{ form.seasons }}" placeholder="7, 13, 13">
-    <small class="muted">
-      Status follows your episodes unless the series is dropped.
-      Lowering a number discards the watch history of the episodes removed.
-    </small>
-  </label>
+  {% if not title_id %}<p class="muted">Save the series first, then add its seasons from its page.</p>{% endif %}
   {% else %}
   <div class="field-row">
     <label>Release date
@@ -73,10 +113,11 @@
 
   <fieldset class="platform-picker">
     <legend>Where to {{ "play" if form.kind == "game" else "watch" }}</legend>
-    {% for platform in platforms %}
+    {# A platform of the other type stays listed if it's linked, so saving can't drop it. #}
+    {% for platform in platforms if platform.kind == platform_kind or platform.id in platform_ids %}
     <label><input type="checkbox" name="platform_ids" value="{{ platform.id }}" {% if platform.id in platform_ids %}checked{% endif %}> {{ platform.name }}</label>
     {% else %}
-    <p class="muted">No platforms yet. <a href="/platforms">Add one</a> first.</p>
+    <p class="muted">No {{ "game consoles" if game else "streaming platforms" }} yet. <a href="/platforms">Add one</a> first.</p>
     {% endfor %}
   </fieldset>
 

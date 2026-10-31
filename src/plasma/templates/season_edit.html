@@ -4,7 +4,7 @@
 <nav class="breadcrumbs" aria-label="Breadcrumb">
   <a href="/titles/{{ title.id }}">{{ title.name }}</a><span>›</span><a href="/titles/{{ title.id }}/seasons/{{ season }}">Season {{ season }}</a>
 </nav>
-<h1>Edit episodes</h1>
+<h1>Edit season {{ season }}</h1>
 
 {% if errors %}
 <ul class="errors" role="alert">
@@ -13,6 +13,10 @@
 {% endif %}
 
 <form class="stacked episode-details" method="post" action="/titles/{{ title.id }}/seasons/{{ season }}/details">
+  <label class="season-size">Number of episodes
+    <input name="episodes" type="number" min="1" max="999" value="{{ episodes }}" required>
+    <small class="muted">Lowering this discards the details and watch history of the episodes removed.</small>
+  </label>
   {% for row in rows %}
   <div class="episode-row">
     <span class="code">{{ row | episode_code }}</span>
@@ -32,4 +36,11 @@
     <a class="button" href="/titles/{{ title.id }}/seasons/{{ season }}">Cancel</a>
   </div>
 </form>
+
+{% if is_last %}
+<form class="danger-zone" method="post" action="/titles/{{ title.id }}/seasons/{{ season }}/delete"
+      onsubmit="return confirm('Delete this season and its watch history?')">
+  <button class="danger">Delete season</button>
+</form>
+{% endif %}
 {% endblock %}

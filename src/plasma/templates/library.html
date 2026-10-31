@@ -13,6 +13,18 @@
     <option value="{{ option.value }}" {% if status == option %}selected{% endif %}>{{ status_label(option.value, kind.value if kind else "") }}</option>
     {% endfor %}
   </select>
+  <select name="genre" aria-label="Genre">
+    <option value="">Any genre</option>
+    {% for option in genre_options %}
+    <option value="{{ option }}" {% if genre == option %}selected{% endif %}>{{ option }}</option>
+    {% endfor %}
+  </select>
+  <select name="age" aria-label="Age restriction">
+    <option value="">Any age</option>
+    {% for option in age_restrictions %}
+    <option value="{{ option.value }}" {% if age == option %}selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
   <label class="check"><input type="checkbox" name="favorite" value="true" {% if favorite %}checked{% endif %}> Favorites</label>
   {% if kind and kind.value == "game" %}
   <label class="check"><input type="checkbox" name="owned" value="true" {% if owned %}checked{% endif %}> Owned</label>

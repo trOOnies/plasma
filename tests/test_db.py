@@ -244,3 +244,43 @@ def test_failed_upgrade_leaves_the_database_untouched(db_path, monkeypatch):
     conn = connect(db_path)
     assert library.get_title(conn, 2)["episodes_total"] == 2
     conn.close()
+
+
+def test_upgrade_adds_game_modes_and_sorts_platforms(db_path):
+    conn = connect(db_path)
+    conn.executescript(
+        """
+        INSERT INTO titles (id, kind, name) VALUES (1, 'game', 'Hades'), (2, 'movie', 'Film');
+        INSERT INTO platforms (id, name) VALUES
+            (1, 'Netflix'), (2, 'Steam'), (3, 'Arcade Box'), (4, 'Both Ways'), (5, 'Unused');
+        INSERT INTO title_platforms (title_id, platform_id) VALUES
+            (2, 1), (1, 3), (1, 4), (2, 4);
+        ALTER TABLE titles DROP COLUMN singleplayer;
+        ALTER TABLE titles DROP COLUMN multiplayer;
+        ALTER TABLE titles DROP COLUMN multiplayer_status;
+        ALTER TABLE titles DROP COLUMN age_restriction;
+        ALTER TABLE platforms DROP COLUMN kind;
+        DROP TABLE title_genres;
+        PRAGMA user_version = 4;
+        """
+    )
+    conn.close()
+
+    conn = connect(db_path)
+    kinds = dict(conn.execute("SELECT name, kind FROM platforms").fetchall())
+    assert kinds == {
+        "Netflix": "streaming",
+        "Steam": "console",
+        "Arcade Box": "console",
+        "Both Ways": "streaming",
+        "Unused": "streaming",
+    }
+    game = library.get_title(conn, 1)
+    assert (game["singleplayer"], game["multiplayer"], game["multiplayer_status"]) == (
+        1,
+        None,
+        "none",
+    )
+    assert library.title_genres(conn, 1) == []
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()

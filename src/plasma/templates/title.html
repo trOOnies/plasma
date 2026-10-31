@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import heart, progress, status_label %}
+{% from "_macros.html" import age_label, heart, kind_icon, pencil, progress, status_picker %}
 {% block title %}{{ title.name }} · Plasma{% endblock %}
 {% block content %}
 <div class="title-layout{% if title.image %} has-poster{% endif %}">
@@ -15,7 +15,7 @@
                   aria-label="{{ 'Remove from favorites' if title.favorite else 'Add to favorites' }}"
                   title="{{ 'Remove from favorites' if title.favorite else 'Add to favorites' }}">{{ heart() }}</button>
         </form>
-        <h1>{{ title.name }}{% if title.year %} <span class="muted">({{ title.year }})</span>{% endif %}</h1>
+        <h1>{{ kind_icon(title.kind) }} {{ title.name }}{% if title.year %} <span class="muted">({{ title.year }})</span>{% endif %}</h1>
       </div>
       <div class="actions">
         {% if next_episode %}
@@ -32,21 +32,28 @@
       </div>
     </div>
 
-    <form class="status-picker" method="post" action="/titles/{{ title.id }}/status" aria-label="Status">
-      {% for option in picker_statuses %}
-      {% set active = title.status == option.value %}
-      <button class="status-{{ option.value }}" name="status" value="{{ 'none' if active else option.value }}" aria-pressed="{{ 'true' if active else 'false' }}"{% if option.value in locked_statuses %} disabled title="Follows your episodes"{% elif active %} title="Click to clear"{% endif %}>{{ status_label(option.value, title.kind) }}</button>
-      {% endfor %}
-    </form>
+    {% if title.singleplayer %}
+    {{ status_picker("/titles/%d/status" % title.id, picker_statuses, title.status, title.kind, "Singleplayer" if title.kind == "game" else none, locked_statuses) }}
+    {% endif %}
+    {% if title.kind == "game" and title.multiplayer %}
+    {{ status_picker("/titles/%d/multiplayer-status" % title.id, multiplayer_picker_statuses, title.multiplayer_status, title.kind, "Multiplayer") }}
+    {% endif %}
 
     <p class="meta">
       {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
+      {% if title.age_restriction %}<a class="age-chip" href="/titles?kind={{ title.kind }}&amp;age={{ title.age_restriction | urlencode }}">{{ age_label(title.age_restriction) }}</a>{% endif %}
       {% if title.producer %}<span class="muted">Producer: {{ title.producer }}</span>{% endif %}
       {% if title.duration %}<span class="muted">{{ title.duration | duration }}</span>{% endif %}
       {% if title.release_date %}<span class="muted">Release date: {{ title.release_date | long_date }}</span>{% endif %}
       {% if title.hours_played is not none %}<span class="muted">{{ title.hours_played }}h played</span>{% endif %}
       {% if title.kind != "series" and title.watched_on %}<span class="muted">{{ "Finished" if title.kind == "game" else "Watched" }} {{ title.watched_on }}</span>{% endif %}
     </p>
+
+    {% if genres %}
+    <p class="platform-list">
+      {% for genre in genres %}<a class="platform-chip" href="/titles?kind={{ title.kind }}&amp;genre={{ genre | urlencode }}">{{ genre }}</a>{% endfor %}
+    </p>
+    {% endif %}
 
     {% if platforms %}
     <p class="platform-list">
@@ -90,6 +97,7 @@
                 formaction="/titles/{{ title.id }}/seasons/{{ season }}">
           {{ "Clear season" if watched == episodes | length else "Mark season watched" }}
         </button>
+        <a class="icon-link" href="/titles/{{ title.id }}/seasons/{{ season }}/edit" aria-label="Edit season {{ season }}" title="Edit season {{ season }}">{{ pencil() }}</a>
       </div>
       <div class="episodes">
         {% for episode in episodes %}
@@ -104,7 +112,8 @@
     {% endfor %}
   </form>
   {% else %}
-  <p class="muted">No episodes yet. <a href="/titles/{{ title.id }}/edit">Add the season sizes</a> to track progress.</p>
+  <p class="muted">No seasons yet. Add one to track your progress.</p>
   {% endif %}
+  <p class="new-season"><a class="button" href="/titles/{{ title.id }}/seasons/new">+ New season</a></p>
 {% endif %}
 {% endblock %}

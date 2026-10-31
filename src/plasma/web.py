@@ -10,7 +10,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from datetime import date
 from math import ceil
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import urlencode
 
 import uvicorn
@@ -26,10 +26,18 @@ from plasma.db import connect
 from plasma.importer import IMAGES_FOLDER, INFO_DIR, InputsCreatedError, ensure_inputs
 from plasma.models import (
     FAVORITES_PLAN_NAME,
+    GAME_GENRES,
+    GENRES,
+    MAX_SEASONS,
+    SCREEN_GENRES,
+    AgeRestriction,
     Details,
     Kind,
+    MultiplayerStatus,
     PlanInput,
     PlatformInput,
+    PlatformKind,
+    SeasonInput,
     Status,
     TitleInput,
     describe_errors,
@@ -41,6 +49,12 @@ PAGE_SIZE = 25
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 templates.env.globals["statuses"] = list(Status)
 templates.env.globals["picker_statuses"] = [s for s in Status if s is not Status.NONE]
+templates.env.globals["multiplayer_picker_statuses"] = [
+    s for s in MultiplayerStatus if s is not MultiplayerStatus.NONE
+]
+templates.env.globals["multiplayer_statuses"] = list(MultiplayerStatus)
+templates.env.globals["age_restrictions"] = list(AgeRestriction)
+templates.env.globals["platform_kinds"] = list(PlatformKind)
 templates.env.globals["favorites_plan_name"] = FAVORITES_PLAN_NAME
 
 router = APIRouter()
@@ -125,6 +139,13 @@ def require_episode(
     return episode
 
 
+def require_series(conn: sqlite3.Connection, title_id: int) -> sqlite3.Row:
+    title = require_title(conn, title_id)
+    if title["kind"] != Kind.SERIES.value:
+        raise HTTPException(status_code=404)
+    return title
+
+
 def require_platform(conn: sqlite3.Connection, platform_id: int) -> sqlite3.Row:
     platform = library.get_platform(conn, platform_id)
     if platform is None:
@@ -176,6 +197,11 @@ def title_form(
     name: str = Form(""),
     year: str = Form(""),
     status: str = Form("none"),
+    singleplayer: str = Form(""),
+    multiplayer: str = Form(""),
+    multiplayer_status: str = Form("none"),
+    age_restriction: str = Form(""),
+    genres: list[str] = Form([]),
     rating: str = Form(""),
     duration: str = Form(""),
     release_date: str = Form(""),
@@ -184,12 +210,16 @@ def title_form(
     description: str = Form(""),
     notes: str = Form(""),
     watched_on: str = Form(""),
-    seasons: str = Form(""),
-) -> dict[str, str]:
+) -> dict[str, Any]:
     return {
         "name": name,
         "year": year,
         "status": status,
+        "singleplayer": singleplayer,
+        "multiplayer": multiplayer,
+        "multiplayer_status": multiplayer_status,
+        "age_restriction": age_restriction,
+        "genres": genres,
         "rating": rating,
         "duration": duration,
         "release_date": release_date,
@@ -198,17 +228,27 @@ def title_form(
         "description": description,
         "notes": notes,
         "watched_on": watched_on,
-        "seasons": seasons,
     }
 
 
-TitleForm = Annotated[dict[str, str], Depends(title_form)]
-# The library filter's "Any status" option submits an empty value.
+TitleForm = Annotated[dict[str, Any], Depends(title_form)]
+# A library filter's "Any" option submits an empty value.
 StatusFilter = Annotated[Status | None, BeforeValidator(lambda value: value or None)]
+AgeFilter = Annotated[AgeRestriction | None, BeforeValidator(lambda value: value or None)]
 
 
-def parse_form(form: dict[str, str]) -> TitleInput:
-    data = TitleInput(**form)
+def parse_form(form: dict[str, Any]) -> TitleInput:
+    values = dict(form)
+    if form["kind"] != Kind.GAME.value:
+        for key in ("singleplayer", "multiplayer", "multiplayer_status"):
+            del values[key]
+    else:
+        # Unticking a mode clears what the form still shows for it.
+        if not form["singleplayer"]:
+            values.update(status=Status.NONE.value, watched_on="")
+        if not form["multiplayer"]:
+            values["multiplayer_status"] = MultiplayerStatus.NONE.value
+    data = TitleInput(**values)
     if data.kind is not Kind.SERIES and data.status is Status.COMPLETED and not data.watched_on:
         return data.model_copy(update={"watched_on": date.today()})
     return data
@@ -217,7 +257,7 @@ def parse_form(form: dict[str, str]) -> TitleInput:
 def render_form(
     request: Request,
     conn: sqlite3.Connection,
-    form: dict[str, str],
+    form: dict[str, Any],
     platform_ids: list[int],
     errors: list[str] | None = None,
     title_id: int | None = None,
@@ -229,6 +269,7 @@ def render_form(
         "title_id": title_id,
         "platforms": library.list_platforms(conn),
         "platform_ids": platform_ids,
+        "genre_options": GAME_GENRES if form["kind"] == "game" else SCREEN_GENRES,
     }
     return templates.TemplateResponse(request, "form.html", context, status_code=status_code)
 
@@ -261,9 +302,21 @@ def titles(
     q: str = "",
     favorite: bool = False,
     owned: bool = False,
+    genre: str = "",
+    age: AgeFilter = None,
     page: int = 1,
 ) -> Response:
-    matches = library.list_titles(conn, kind, status, q.strip(), favorite=favorite, owned=owned)
+    matches = library.list_titles(
+        conn,
+        kind,
+        status,
+        q.strip(),
+        order="t.favorite DESC, t.name COLLATE NOCASE",
+        favorite=favorite,
+        owned=owned,
+        genre=genre,
+        age_restriction=age,
+    )
     shown, pages = paginate(request, matches, page)
     context = {
         "titles": shown,
@@ -273,6 +326,9 @@ def titles(
         "q": q,
         "favorite": favorite,
         "owned": owned,
+        "genre": genre,
+        "age": age,
+        "genre_options": GENRES[kind] if kind else sorted({*SCREEN_GENRES, *GAME_GENRES}),
     }
     return templates.TemplateResponse(request, "library.html", context)
 
@@ -292,7 +348,8 @@ def help_page(request: Request) -> Response:
 
 @router.get("/titles/new", response_class=HTMLResponse)
 def new_title(request: Request, conn: Conn, kind: Kind = Kind.MOVIE) -> Response:
-    return render_form(request, conn, {"kind": kind.value, "status": Status.NONE.value}, [])
+    form = {"kind": kind.value, "status": Status.NONE.value, "singleplayer": "true"}
+    return render_form(request, conn, form, [])
 
 
 @router.post("/titles")
@@ -326,6 +383,7 @@ def title_detail(request: Request, conn: Conn, title_id: int) -> Response:
         "seasons": library.episodes_by_season(conn, title_id),
         "next_episode": library.next_episode(conn, title_id),
         "platforms": library.title_platforms(conn, title_id),
+        "genres": library.title_genres(conn, title_id),
         "plans": library.plans_for_title(conn, title_id),
     }
     return templates.TemplateResponse(request, "title.html", context)
@@ -336,6 +394,8 @@ FORM_COLUMNS = (
     "name",
     "year",
     "status",
+    "multiplayer_status",
+    "age_restriction",
     "rating",
     "duration",
     "release_date",
@@ -354,7 +414,9 @@ def edit_title(request: Request, conn: Conn, title_id: int) -> Response:
         key: "" if title[key] is None else str(title[key])
         for key in FORM_COLUMNS
     }
-    form["seasons"] = ", ".join(str(count) for count in library.season_counts(conn, title_id))
+    form["singleplayer"] = "true" if title["singleplayer"] else ""
+    form["multiplayer"] = "true" if title["multiplayer"] else ""
+    form["genres"] = library.title_genres(conn, title_id)
     platform_ids = [platform["id"] for platform in library.title_platforms(conn, title_id)]
     return render_form(request, conn, form, platform_ids, title_id=title_id)
 
@@ -392,9 +454,23 @@ def delete_title(conn: Conn, title_id: int) -> Response:
 
 @router.post("/titles/{title_id}/status")
 def set_status(conn: Conn, title_id: int, status: Status = Form(...)) -> Response:
-    require_title(conn, title_id)
+    title = require_title(conn, title_id)
+    if not title["singleplayer"]:
+        raise HTTPException(status_code=404)
     with conn:
         library.set_status(conn, title_id, status)
+    return redirect(f"/titles/{title_id}")
+
+
+@router.post("/titles/{title_id}/multiplayer-status")
+def set_multiplayer_status(
+    conn: Conn, title_id: int, status: MultiplayerStatus = Form(...)
+) -> Response:
+    title = require_title(conn, title_id)
+    if not title["multiplayer"]:
+        raise HTTPException(status_code=404)
+    with conn:
+        library.set_multiplayer_status(conn, title_id, status)
     return redirect(f"/titles/{title_id}")
 
 
@@ -523,14 +599,63 @@ def render_season_form(
     request: Request,
     title: sqlite3.Row,
     season: int,
+    episodes: str,
+    is_last: bool,
     rows: list[dict],
     errors: list[str] | None = None,
     status_code: int = 200,
 ) -> Response:
-    context = {"title": title, "season": season, "rows": rows, "errors": errors or []}
+    context = {
+        "title": title,
+        "season": season,
+        "episodes": episodes,
+        "is_last": is_last,
+        "rows": rows,
+        "errors": errors or [],
+    }
     return templates.TemplateResponse(
         request, "season_edit.html", context, status_code=status_code
     )
+
+
+def render_new_season(
+    request: Request,
+    title: sqlite3.Row,
+    season: int,
+    episodes: str = "",
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    context = {"title": title, "season": season, "episodes": episodes, "errors": errors or []}
+    return templates.TemplateResponse(request, "season_new.html", context, status_code=status_code)
+
+
+def next_season(conn: sqlite3.Connection, title_id: int) -> int:
+    return len(library.season_counts(conn, title_id)) + 1
+
+
+@router.get("/titles/{title_id}/seasons/new", response_class=HTMLResponse)
+def new_season(request: Request, conn: Conn, title_id: int) -> Response:
+    title = require_series(conn, title_id)
+    return render_new_season(request, title, next_season(conn, title_id))
+
+
+@router.post("/titles/{title_id}/seasons")
+def create_season(
+    request: Request, conn: Conn, title_id: int, episodes: str = Form("")
+) -> Response:
+    title = require_series(conn, title_id)
+    season = next_season(conn, title_id)
+    if season > MAX_SEASONS:
+        errors = [f"A series can have up to {MAX_SEASONS} seasons."]
+        return render_new_season(request, title, season, episodes, errors, 422)
+    try:
+        data = SeasonInput(episodes=episodes)
+    except ValidationError as error:
+        return render_new_season(request, title, season, episodes, describe_errors(error), 422)
+    with conn:
+        library.add_season(conn, title_id, data.episodes)
+    return redirect(f"/titles/{title_id}#season-{season}")
 
 
 @router.get("/titles/{title_id}/seasons/{season}", response_class=HTMLResponse)
@@ -553,6 +678,7 @@ def season_page(request: Request, conn: Conn, title_id: int, season: int) -> Res
 @router.get("/titles/{title_id}/seasons/{season}/edit", response_class=HTMLResponse)
 def edit_season(request: Request, conn: Conn, title_id: int, season: int) -> Response:
     title = require_title(conn, title_id)
+    episodes = require_season(conn, title_id, season)
     rows = [
         {
             "season": season,
@@ -561,9 +687,10 @@ def edit_season(request: Request, conn: Conn, title_id: int, season: int) -> Res
             "release_date": episode["release_date"] or "",
             "description": episode["description"],
         }
-        for episode in require_season(conn, title_id, season)
+        for episode in episodes
     ]
-    return render_season_form(request, title, season, rows)
+    is_last = season == len(library.season_counts(conn, title_id))
+    return render_season_form(request, title, season, str(rows[-1]["number"]), is_last, rows)
 
 
 @router.post("/titles/{title_id}/seasons/{season}/details")
@@ -572,8 +699,15 @@ async def save_season_details(
 ) -> Response:
     title = require_title(conn, title_id)
     form = await request.form()
+    episodes = require_season(conn, title_id, season)
+    size = str(form.get("episodes", episodes[-1]["number"]))
+    is_last = season == len(library.season_counts(conn, title_id))
     rows, details, errors = [], {}, []
-    for episode in require_season(conn, title_id, season):
+    try:
+        new_size = SeasonInput(episodes=size).episodes
+    except ValidationError as error:
+        errors.extend(describe_errors(error))
+    for episode in episodes:
         number = episode["number"]
         values = {
             "duration": str(form.get(f"duration_{number}", "")),
@@ -587,11 +721,23 @@ async def save_season_details(
             code = episode_code(episode)
             errors.extend(f"{code} {message}" for message in describe_errors(error))
     if errors:
-        return render_season_form(request, title, season, rows, errors, status_code=422)
+        return render_season_form(request, title, season, size, is_last, rows, errors, 422)
     with conn:
         for number, data in details.items():
             library.update_episode(conn, title_id, season, number, data)
+        library.resize_season(conn, title_id, season, new_size)
     return redirect(f"/titles/{title_id}/seasons/{season}")
+
+
+@router.post("/titles/{title_id}/seasons/{season}/delete")
+def delete_season(conn: Conn, title_id: int, season: int) -> Response:
+    """Only the last season can go, since the others are numbered by position."""
+    require_season(conn, title_id, season)
+    if season != len(library.season_counts(conn, title_id)):
+        raise HTTPException(status_code=404)
+    with conn:
+        library.delete_last_season(conn, title_id)
+    return redirect(f"/titles/{title_id}")
 
 
 @router.post("/titles/{title_id}/seasons/{season}")
@@ -614,7 +760,7 @@ def render_platforms(
     status_code: int = 200,
 ) -> Response:
     context = {
-        "platforms": library.list_platforms(conn),
+        "platforms": library.platforms_by_kind(conn),
         "form": form or {},
         "errors": errors or [],
     }
@@ -647,9 +793,13 @@ def platforms(request: Request, conn: Conn) -> Response:
 
 @router.post("/platforms")
 def create_platform(
-    request: Request, conn: Conn, name: str = Form(""), url: str = Form("")
+    request: Request,
+    conn: Conn,
+    name: str = Form(""),
+    url: str = Form(""),
+    kind: str = Form(PlatformKind.STREAMING.value),
 ) -> Response:
-    form = {"name": name, "url": url}
+    form = {"name": name, "url": url, "kind": kind}
     try:
         with conn:
             platform_id = library.create_platform(conn, PlatformInput(**form))
@@ -667,10 +817,15 @@ def platform_page(request: Request, conn: Conn, platform_id: int) -> Response:
 
 @router.post("/platforms/{platform_id}")
 def update_platform(
-    request: Request, conn: Conn, platform_id: int, name: str = Form(""), url: str = Form("")
+    request: Request,
+    conn: Conn,
+    platform_id: int,
+    name: str = Form(""),
+    url: str = Form(""),
+    kind: str = Form(PlatformKind.STREAMING.value),
 ) -> Response:
     platform = require_platform(conn, platform_id)
-    form = {"name": name, "url": url}
+    form = {"name": name, "url": url, "kind": kind}
     try:
         with conn:
             library.update_platform(conn, platform_id, PlatformInput(**form))

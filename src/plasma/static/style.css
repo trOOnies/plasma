@@ -190,6 +190,7 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
 .rows a:hover { color: var(--accent); }
 .rows .muted { font-size: 0.9rem; }
 .rows .badge { margin-left: auto; }
+.rows .badge + .badge { margin-left: 0; }
 .rows .progress { flex-basis: 100%; }
 
 .badge {
@@ -198,6 +199,10 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
   border-radius: 999px;
   font-size: 0.8rem;
 }
+
+.kind-icon { display: inline-flex; flex: none; color: var(--muted); vertical-align: -0.12em; }
+.kind-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+h1 .kind-icon svg { width: 22px; height: 22px; }
 
 .badge-planned { color: var(--planned); }
 .badge-watching { color: var(--watching); }
@@ -245,6 +250,14 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
 .stacked .platform-picker label { display: flex; align-items: center; gap: 6px; }
 .platform-picker input { flex: none; width: auto; }
 .platform-picker p { margin: 0; }
+
+.game-modes { display: grid; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
+.game-modes legend { padding: 0 4px; font-size: 0.95rem; }
+.game-mode { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: center; }
+.stacked .game-mode .check { display: flex; align-items: center; gap: 6px; }
+.game-mode .check input { flex: none; width: auto; }
+
+.age-chip { padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; font-weight: 600; text-decoration: none; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .filters input { flex: 1 1 200px; }
@@ -389,7 +402,9 @@ button.favorite {
 button.favorite:hover { border-color: var(--favorite); }
 .favorite.active svg { fill: currentColor; }
 
-.status-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 12px 0; }
+.status-mode { min-width: 96px; color: var(--muted); font-size: 0.9rem; }
+.status-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 .status-picker button { padding: 4px 12px; border-radius: 999px; font-size: 0.9rem; }
 .status-picker button:disabled { opacity: 0.45; cursor: not-allowed; }
 .status-picker button:disabled:hover { border-color: var(--border); }
@@ -409,6 +424,11 @@ button.favorite:hover { border-color: var(--favorite); }
 .season-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
 .season-head h2 { margin: 0; }
 .season-head button { margin-left: auto; }
+.icon-link { flex: none; width: 32px; height: 32px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); line-height: 0; }
+.icon-link:hover { border-color: var(--accent); }
+.icon-link svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.new-season { margin-top: 24px; }
+.season-size { max-width: 240px; }
 .season-head h2 a { color: inherit; text-decoration: none; }
 .season-head h2 a:hover { color: var(--accent); }
 

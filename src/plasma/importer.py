@@ -3,10 +3,10 @@
 A title's tracking fields (status, watch date, progress, owned) are read the first
 time it is imported. After that the app owns them, so a re-import cannot undo anything
 done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
-in a rating, duration, hours played, producer, release date, description, notes or
-platforms that are still blank, and apply the image, which can only be set from info/.
-The platforms list adds services and consoles that no title uses yet, and fills in any
-URL that is still blank.
+in a rating, age restriction, duration, hours played, producer, release date,
+description, notes, genres, platforms or multiplayer setting that are still blank, and
+apply the image, which can only be set from info/. The platforms list adds services and
+consoles that no title uses yet, and fills in any URL that is still blank.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -167,6 +167,8 @@ def import_entries(
                 library.toggle_owned(conn, title_id)
             result.added += 1
             continue
+        if entry.multiplayer and existing["multiplayer"] is None:
+            library.set_multiplayer_status(conn, existing["id"], entry.multiplayer_status)
         grew = library.extend_seasons(conn, existing["id"], entry.seasons)
         filled = library.fill_blanks(
             conn,
@@ -178,9 +180,12 @@ def import_entries(
             release_date=library.iso_date(entry.release_date),
             description=entry.description,
             notes=entry.notes,
+            multiplayer=entry.multiplayer,
+            age_restriction=entry.age_restriction.value if entry.age_restriction else None,
         )
         filled = _fill_episodes(conn, existing["id"], entry) or filled
         filled = library.fill_title_platforms(conn, existing["id"], entry.platforms) or filled
+        filled = library.fill_title_genres(conn, existing["id"], entry.genres) or filled
         new_image = entry.image is not None and entry.image != existing["image"]
         if new_image:
             library.set_image(conn, existing["id"], entry.image)
