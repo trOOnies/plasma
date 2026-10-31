@@ -180,6 +180,19 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
 .episode-info { min-width: 0; }
 .episode-info p { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
 
+.rows .row-action { margin: 0; }
+.rows .badge + .row-action { margin-left: 8px; }
+.rows .muted + .row-action { margin-left: auto; }
+
+.plan-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-picker button { padding: 4px 12px; border-radius: 999px; font-size: 0.9rem; }
+.plan-picker [aria-pressed="true"], .owned-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+.add-to-plan { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.add-to-plan select { flex: 1 1 240px; width: auto; }
+
+.plan-builtin { color: var(--favorite); font-size: 0.85rem; }
+
 .platform-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .platform-chip { padding: 2px 10px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; text-decoration: none; }
 .platform-chip:hover { border-color: var(--muted); }

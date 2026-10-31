@@ -3,6 +3,7 @@
 movies:
   - name: Arrival
     year: 2016
+    producer: FilmNation Entertainment
     status: completed
     rating: 9
     watched_on: 2024-03-02
@@ -54,3 +55,17 @@ series:
   - name: The Bear
     year: 2022
     seasons: [8, 10, 10]
+
+games:
+  - name: Hades
+    year: 2020
+    producer: Supergiant Games
+    owned: true                    # Games only.
+    status: playing
+    hours_played: 42               # Whole hours.
+    platforms: [Steam]
+  - name: Celeste
+    year: 2018
+    status: completed
+    rating: 10
+    watched_on: 2024-08-17         # The day you finished it.

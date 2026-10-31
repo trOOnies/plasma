@@ -2,7 +2,7 @@
 {% from "_macros.html" import status_label, title_row %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
-<h1>{% if kind %}{{ "Movies" if kind.value == "movie" else "Series" }}{% else %}Everything{% endif %}</h1>
+<h1>{% if kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
 
 <form class="filters" method="get" action="/titles">
   {% if kind %}<input type="hidden" name="kind" value="{{ kind.value }}">{% endif %}
@@ -10,10 +10,13 @@
   <select name="status" aria-label="Status">
     <option value="">Any status</option>
     {% for option in statuses %}
-    <option value="{{ option.value }}" {% if status == option %}selected{% endif %}>{{ status_label(option.value) }}</option>
+    <option value="{{ option.value }}" {% if status == option %}selected{% endif %}>{{ status_label(option.value, kind.value if kind else "") }}</option>
     {% endfor %}
   </select>
   <label class="check"><input type="checkbox" name="favorite" value="true" {% if favorite %}checked{% endif %}> Favorites</label>
+  {% if kind and kind.value == "game" %}
+  <label class="check"><input type="checkbox" name="owned" value="true" {% if owned %}checked{% endif %}> Owned</label>
+  {% endif %}
   <button>Filter</button>
 </form>
 

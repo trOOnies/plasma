@@ -4,7 +4,7 @@ import pytest
 
 from conftest import movie, series
 from plasma import library
-from plasma.models import Details, Kind, PlatformInput, Status
+from plasma.models import Details, Kind, PlanInput, PlatformInput, Status, TitleInput
 
 
 def status_of(conn, title_id):
@@ -461,6 +461,165 @@ def test_fill_title_platforms_leaves_a_title_that_has_some(conn):
     assert [row["name"] for row in library.title_platforms(conn, title_id)] == ["Netflix"]
 
 
+def game(name: str = "Hades", **fields) -> TitleInput:
+    return TitleInput(kind=Kind.GAME, name=name, **fields)
+
+
+def test_game_status_and_finish_date(conn):
+    title_id = library.create_title(conn, game())
+    assert status_of(conn, title_id) == "none"
+    library.set_status(conn, title_id, Status.COMPLETED)
+    title = library.get_title(conn, title_id)
+    assert (title["status"], title["watched_on"]) == ("completed", date.today().isoformat())
+    library.set_status(conn, title_id, Status.WATCHING)
+    title = library.get_title(conn, title_id)
+    assert (title["status"], title["watched_on"]) == ("watching", None)
+
+
+def test_hours_played_are_saved(conn):
+    title_id = library.create_title(conn, game(hours_played=10))
+    library.update_title(conn, title_id, game(hours_played=25))
+    assert library.get_title(conn, title_id)["hours_played"] == 25
+
+
+def test_nothing_is_locked_on_a_game(conn):
+    title_id = library.create_title(conn, game())
+    assert library.locked_statuses(library.get_title(conn, title_id)) == []
+
+
+def test_a_game_can_share_a_name_with_a_movie(conn):
+    library.create_title(conn, movie("Dune", year=2021))
+    library.create_title(conn, game("Dune", year=2021))
+    with pytest.raises(library.DuplicateTitleError):
+        library.create_title(conn, game("DUNE", year=2021))
+
+
+def test_games_appear_in_upcoming(conn):
+    library.create_title(conn, game(release_date=on(5)))
+    assert library.upcoming(conn, TODAY)[0]["kind"] == "game"
+
+
+def test_producer_is_saved_on_every_kind(conn):
+    first = library.create_title(conn, movie(producer="A24"))
+    second = library.create_title(conn, game(producer="Valve"))
+    library.update_title(conn, first, movie(producer="Neon"))
+    assert library.get_title(conn, first)["producer"] == "Neon"
+    assert library.get_title(conn, second)["producer"] == "Valve"
+
+
+def test_owned_toggle_and_filter(conn):
+    title_id = library.create_title(conn, game("Owned"))
+    library.create_title(conn, game("Not owned"))
+    library.toggle_owned(conn, title_id)
+    assert names(library.list_titles(conn, owned=True)) == ["Owned"]
+    library.toggle_owned(conn, title_id)
+    assert library.list_titles(conn, owned=True) == []
+
+
+def test_editing_a_game_keeps_it_owned_and_favorite(conn):
+    title_id = library.create_title(conn, game())
+    library.toggle_owned(conn, title_id)
+    library.toggle_favorite(conn, title_id)
+    library.update_title(conn, title_id, game(hours_played=5))
+    title = library.get_title(conn, title_id)
+    assert (title["owned"], title["favorite"]) == (1, 1)
+
+
+def plan(name: str = "Family", **fields) -> PlanInput:
+    return PlanInput(name=name, **fields)
+
+
+def test_plan_mixes_kinds_in_the_order_added(conn):
+    plan_id = library.create_plan(conn, plan())
+    show = library.create_title(conn, series("Z show"))
+    film = library.create_title(conn, movie("M film"))
+    play = library.create_title(conn, game("A game"))
+    for title_id in (show, film, play):
+        library.add_to_plan(conn, plan_id, title_id)
+    assert names(library.plan_titles(conn, plan_id)) == ["Z show", "M film", "A game"]
+    assert library.list_plans(conn)[0]["item_count"] == 3
+
+
+def test_plan_titles_keep_their_episode_progress(conn):
+    plan_id = library.create_plan(conn, plan())
+    show = library.create_title(conn, series(seasons=(3,)))
+    library.toggle_episode(conn, show, 1, 2)
+    library.add_to_plan(conn, plan_id, show)
+    [row] = library.plan_titles(conn, plan_id)
+    assert (row["episodes_total"], row["episodes_watched"]) == (3, 2)
+
+
+def test_adding_twice_keeps_one_entry(conn):
+    plan_id = library.create_plan(conn, plan())
+    film = library.create_title(conn, movie())
+    library.add_to_plan(conn, plan_id, film)
+    library.add_to_plan(conn, plan_id, film)
+    assert len(library.plan_titles(conn, plan_id)) == 1
+
+
+def test_a_title_can_be_in_several_plans(conn):
+    first = library.create_plan(conn, plan("Family"))
+    second = library.create_plan(conn, plan("Friends"))
+    film = library.create_title(conn, movie())
+    library.add_to_plan(conn, first, film)
+    library.add_to_plan(conn, second, film)
+    library.remove_from_plan(conn, first, film)
+    assert library.plan_titles(conn, first) == []
+    assert len(library.plan_titles(conn, second)) == 1
+
+
+def test_plans_for_title_flags_membership(conn):
+    first = library.create_plan(conn, plan("Family"))
+    library.create_plan(conn, plan("Friends"))
+    film = library.create_title(conn, movie())
+    library.add_to_plan(conn, first, film)
+    flags = {row["name"]: row["included"] for row in library.plans_for_title(conn, film)}
+    assert flags == {"Family": 1, "Friends": 0}
+
+
+def test_titles_outside_plan(conn):
+    plan_id = library.create_plan(conn, plan())
+    inside = library.create_title(conn, movie("Inside"))
+    library.create_title(conn, movie("Outside"))
+    library.add_to_plan(conn, plan_id, inside)
+    assert names(library.titles_outside_plan(conn, plan_id)) == ["Outside"]
+
+
+def test_deleting_a_title_leaves_its_plans(conn):
+    plan_id = library.create_plan(conn, plan())
+    film = library.create_title(conn, movie())
+    library.add_to_plan(conn, plan_id, film)
+    library.delete_title(conn, film)
+    assert library.plan_titles(conn, plan_id) == []
+    assert library.get_plan(conn, plan_id) is not None
+
+
+def test_deleting_a_plan_leaves_its_titles(conn):
+    plan_id = library.create_plan(conn, plan())
+    film = library.create_title(conn, movie())
+    library.add_to_plan(conn, plan_id, film)
+    library.delete_plan(conn, plan_id)
+    assert library.get_title(conn, film) is not None
+
+
+def test_plan_names_are_unique_ignoring_case(conn):
+    plan_id = library.create_plan(conn, plan("Family"))
+    with pytest.raises(library.DuplicatePlanError):
+        library.create_plan(conn, plan("FAMILY"))
+    other = library.create_plan(conn, plan("Friends"))
+    with pytest.raises(library.DuplicatePlanError):
+        library.update_plan(conn, other, plan("family"))
+    library.update_plan(conn, plan_id, plan("family", description="New"))
+    assert library.get_plan(conn, plan_id)["description"] == "New"
+
+
+def test_favorite_count_follows_the_hearts(conn):
+    title_id = library.create_title(conn, movie())
+    assert library.favorite_count(conn) == 0
+    library.toggle_favorite(conn, title_id)
+    assert library.favorite_count(conn) == 1
+
+
 def test_description_is_stored_apart_from_notes(conn):
     title_id = library.create_title(conn, movie(description="Plot", notes="Mine"))
     library.update_title(conn, title_id, movie(description="New plot", notes="Mine"))
@@ -502,11 +661,13 @@ def test_stats(conn):
     library.create_title(conn, movie("A", status=Status.COMPLETED, rating=8))
     library.create_title(conn, movie("B", rating=5, status=Status.PLANNED))
     library.create_title(conn, series("C", seasons=(2,), status=Status.COMPLETED))
+    library.create_title(conn, game("E", status=Status.COMPLETED))
     going = library.create_title(conn, series("D", seasons=(2,)))
     library.toggle_episode(conn, going, 1, 1)
     assert library.stats(conn) == {
         "movies_watched": 1,
         "series_completed": 1,
+        "games_finished": 1,
         "planned": 1,
         "average_rating": 6.5,
         "episodes_watched": 3,

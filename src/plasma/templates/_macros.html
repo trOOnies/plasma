@@ -1,15 +1,20 @@
-{% macro status_badge(status) %}{% if status != "none" %}<span class="badge badge-{{ status }}">{{ status }}</span>{% endif %}{% endmacro %}
+{% macro status_word(status, kind) %}{{ "playing" if status == "watching" and kind == "game" else status }}{% endmacro %}
 
-{% macro status_label(status) %}{{ "No status" if status == "none" else status | capitalize }}{% endmacro %}
+{% macro status_badge(status, kind) %}{% if status != "none" %}<span class="badge badge-{{ status }}">{{ status_word(status, kind) }}</span>{% endif %}{% endmacro %}
+
+{% macro status_label(status, kind) %}{{ "No status" if status == "none" else status_word(status, kind) | capitalize }}{% endmacro %}
 
 {% macro heart() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-8.5-5.2-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 2.7c0 6-8.5 11.2-8.5 11.2z"/></svg>{% endmacro %}
 
-{% macro title_row(title) %}
+{% macro title_row(title, remove_url=none) %}
 <li>
   {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
   <a href="/titles/{{ title.id }}">{{ title.name }}</a>
-  <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}{% if title.rating %} · ★ {{ title.rating }}{% endif %}</span>
-  {{ status_badge(title.status) }}
+  <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}{% if title.rating %} · ★ {{ title.rating }}{% endif %}{% if title.owned %} · owned{% endif %}</span>
+  {{ status_badge(title.status, title.kind) }}
+  {% if remove_url %}
+  <form class="row-action" method="post" action="{{ remove_url }}"><button class="small">Remove</button></form>
+  {% endif %}
   {{ progress(title) }}
 </li>
 {% endmacro %}

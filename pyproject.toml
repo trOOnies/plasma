@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "plasma"
 version = "0.1.0"
-description = "Personal TV series & movies watch tracker"
+description = "Personal tracker for TV series, movies and games"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["dependencies"]

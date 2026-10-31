@@ -222,6 +222,77 @@ def test_reimport_keeps_platforms_changed_in_the_app(conn, tmp_path):
     assert [p["name"] for p in library.title_platforms(conn, film["id"])] == ["Hulu"]
 
 
+def test_games_are_imported(conn, tmp_path):
+    text = """
+games:
+  - name: Hades
+    year: 2020
+    status: playing
+    hours_played: 42
+    platforms: [Steam]
+  - name: Celeste
+    status: completed
+    watched_on: 2024-08-17
+"""
+    assert importer.import_paths(conn, [write(tmp_path, text)]).added == 2
+    hades = library.find_title(conn, Kind.GAME, "Hades", 2020)
+    assert (hades["status"], hades["hours_played"]) == ("watching", 42)
+    assert [p["name"] for p in library.title_platforms(conn, hades["id"])] == ["Steam"]
+    celeste = library.find_title(conn, Kind.GAME, "Celeste", None)
+    assert (celeste["status"], celeste["watched_on"]) == ("completed", "2024-08-17")
+
+
+def test_reimport_fills_in_hours_played_but_keeps_app_changes(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "games:\n  - name: Hades\n")])
+    text = "games:\n  - name: Hades\n    hours_played: {}\n"
+    assert importer.import_paths(conn, [write(tmp_path, text.format(10))]).updated == 1
+    assert importer.import_paths(conn, [write(tmp_path, text.format(99))]).unchanged == 1
+    assert library.find_title(conn, Kind.GAME, "Hades", None)["hours_played"] == 10
+
+
+def test_game_with_seasons_is_reported(conn, tmp_path):
+    path = write(tmp_path, "games:\n  - name: Hades\n    seasons: [3]\n")
+    with pytest.raises(importer.ImportFileError, match=r"games\[0\]"):
+        importer.import_paths(conn, [path])
+
+
+def test_producer_and_owned_are_imported(conn, tmp_path):
+    text = """
+movies:
+  - name: Film
+    producer: A24
+games:
+  - name: Hades
+    producer: Supergiant Games
+    owned: true
+  - name: Celeste
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.find_title(conn, Kind.MOVIE, "Film", None)["producer"] == "A24"
+    hades = library.find_title(conn, Kind.GAME, "Hades", None)
+    assert (hades["producer"], hades["owned"]) == ("Supergiant Games", 1)
+    assert library.find_title(conn, Kind.GAME, "Celeste", None)["owned"] == 0
+
+
+def test_reimport_fills_a_blank_producer_but_keeps_owned_changes(conn, tmp_path):
+    text = "games:\n  - name: Hades\n    owned: true\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    hades = library.find_title(conn, Kind.GAME, "Hades", None)
+    library.toggle_owned(conn, hades["id"])
+
+    text += "    producer: Supergiant Games\n"
+    assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
+
+    hades = library.find_title(conn, Kind.GAME, "Hades", None)
+    assert (hades["producer"], hades["owned"]) == ("Supergiant Games", 0)
+
+
+def test_owned_on_a_movie_is_reported(conn, tmp_path):
+    path = write(tmp_path, "movies:\n  - name: Film\n    owned: true\n")
+    with pytest.raises(importer.ImportFileError, match="owned only applies to games"):
+        importer.import_paths(conn, [path])
+
+
 def test_imported_titles_have_no_status_unless_given_one(conn, tmp_path):
     text = "movies:\n  - name: A\n  - name: B\n    status: planned\n"
     importer.import_paths(conn, [write(tmp_path, text)])
@@ -322,8 +393,8 @@ def test_seed_loads_demo_file_and_is_repeatable(conn, db_path, monkeypatch, caps
     monkeypatch.setenv("PLASMA_DB", str(db_path))
     assert seed.main() == 0
     assert seed.main() == 0
-    assert "10 already present" in capsys.readouterr().out
-    assert len(library.list_titles(conn)) == 10
+    assert "12 already present" in capsys.readouterr().out
+    assert len(library.list_titles(conn)) == 12
     wire = library.find_title(conn, Kind.SERIES, "The Wire", 2002)
     assert (wire["status"], wire["episodes_watched"]) == ("watching", 17)
     lost = library.find_title(conn, Kind.SERIES, "Lost", 2004)

@@ -22,13 +22,23 @@ from starlette.background import BackgroundTask
 from plasma import library
 from plasma.db import connect
 from plasma.importer import IMAGES_FOLDER, INFO_DIR, InputsCreatedError, ensure_inputs
-from plasma.models import Details, Kind, PlatformInput, Status, TitleInput, describe_errors
+from plasma.models import (
+    FAVORITES_PLAN_NAME,
+    Details,
+    Kind,
+    PlanInput,
+    PlatformInput,
+    Status,
+    TitleInput,
+    describe_errors,
+)
 
 PACKAGE_DIR = Path(__file__).parent
 
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 templates.env.globals["statuses"] = list(Status)
 templates.env.globals["picker_statuses"] = [s for s in Status if s is not Status.NONE]
+templates.env.globals["favorites_plan_name"] = FAVORITES_PLAN_NAME
 
 router = APIRouter()
 
@@ -119,6 +129,13 @@ def require_platform(conn: sqlite3.Connection, platform_id: int) -> sqlite3.Row:
     return platform
 
 
+def require_plan(conn: sqlite3.Connection, plan_id: int) -> sqlite3.Row:
+    plan = library.get_plan(conn, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404)
+    return plan
+
+
 def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
@@ -130,6 +147,8 @@ def title_form(
     rating: str = Form(""),
     duration: str = Form(""),
     release_date: str = Form(""),
+    hours_played: str = Form(""),
+    producer: str = Form(""),
     description: str = Form(""),
     notes: str = Form(""),
     watched_on: str = Form(""),
@@ -142,6 +161,8 @@ def title_form(
         "rating": rating,
         "duration": duration,
         "release_date": release_date,
+        "hours_played": hours_played,
+        "producer": producer,
         "description": description,
         "notes": notes,
         "watched_on": watched_on,
@@ -156,7 +177,7 @@ StatusFilter = Annotated[Status | None, BeforeValidator(lambda value: value or N
 
 def parse_form(form: dict[str, str]) -> TitleInput:
     data = TitleInput(**form)
-    if data.kind is Kind.MOVIE and data.status is Status.COMPLETED and not data.watched_on:
+    if data.kind is not Kind.SERIES and data.status is Status.COMPLETED and not data.watched_on:
         return data.model_copy(update={"watched_on": date.today()})
     return data
 
@@ -191,6 +212,9 @@ def home(request: Request, conn: Conn) -> Response:
         "just_released": library.just_released(conn, today),
         "upcoming": library.upcoming(conn, today),
         "continuing": [(title, library.next_episode(conn, title["id"])) for title in watching],
+        "playing": library.list_titles(
+            conn, Kind.GAME, Status.WATCHING, order="t.updated_at DESC, t.id DESC"
+        ),
         "planned": library.list_titles(conn, status=Status.PLANNED, order="t.id DESC")[:8],
     }
     return templates.TemplateResponse(request, "home.html", context)
@@ -204,13 +228,17 @@ def titles(
     status: StatusFilter = None,
     q: str = "",
     favorite: bool = False,
+    owned: bool = False,
 ) -> Response:
     context = {
-        "titles": library.list_titles(conn, kind, status, q.strip(), favorite=favorite),
+        "titles": library.list_titles(
+            conn, kind, status, q.strip(), favorite=favorite, owned=owned
+        ),
         "kind": kind,
         "status": status,
         "q": q,
         "favorite": favorite,
+        "owned": owned,
     }
     return templates.TemplateResponse(request, "library.html", context)
 
@@ -264,6 +292,7 @@ def title_detail(request: Request, conn: Conn, title_id: int) -> Response:
         "seasons": library.episodes_by_season(conn, title_id),
         "next_episode": library.next_episode(conn, title_id),
         "platforms": library.title_platforms(conn, title_id),
+        "plans": library.plans_for_title(conn, title_id),
     }
     return templates.TemplateResponse(request, "title.html", context)
 
@@ -276,6 +305,8 @@ FORM_COLUMNS = (
     "rating",
     "duration",
     "release_date",
+    "hours_played",
+    "producer",
     "description",
     "notes",
     "watched_on",
@@ -339,6 +370,29 @@ def toggle_favorite(conn: Conn, title_id: int) -> Response:
     with conn:
         library.toggle_favorite(conn, title_id)
     return redirect(f"/titles/{title_id}")
+
+
+@router.post("/titles/{title_id}/owned")
+def toggle_owned(conn: Conn, title_id: int) -> Response:
+    title = require_title(conn, title_id)
+    if title["kind"] != Kind.GAME.value:
+        raise HTTPException(status_code=404)
+    with conn:
+        library.toggle_owned(conn, title_id)
+    return redirect(f"/titles/{title_id}")
+
+
+@router.post("/titles/{title_id}/plans/{plan_id}")
+def toggle_plan(conn: Conn, title_id: int, plan_id: int) -> Response:
+    require_title(conn, title_id)
+    require_plan(conn, plan_id)
+    included = {plan["id"] for plan in library.plans_for_title(conn, title_id) if plan["included"]}
+    with conn:
+        if plan_id in included:
+            library.remove_from_plan(conn, plan_id, title_id)
+        else:
+            library.add_to_plan(conn, plan_id, title_id)
+    return redirect(f"/titles/{title_id}#plans")
 
 
 @router.post("/titles/{title_id}/next")
@@ -600,6 +654,112 @@ def delete_platform(conn: Conn, platform_id: int) -> Response:
     with conn:
         library.delete_platform(conn, platform_id)
     return redirect("/platforms")
+
+
+def render_plans(
+    request: Request,
+    conn: sqlite3.Connection,
+    form: dict[str, str] | None = None,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    context = {
+        "plans": library.list_plans(conn),
+        "favorite_count": library.favorite_count(conn),
+        "form": form or {},
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(request, "plans.html", context, status_code=status_code)
+
+
+def render_plan(
+    request: Request,
+    conn: sqlite3.Connection,
+    plan: sqlite3.Row,
+    form: Mapping | None = None,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    context = {
+        "plan": plan,
+        "titles": library.plan_titles(conn, plan["id"]),
+        "available": library.titles_outside_plan(conn, plan["id"]),
+        "form": form or plan,
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(request, "plan.html", context, status_code=status_code)
+
+
+@router.get("/plans", response_class=HTMLResponse)
+def plans(request: Request, conn: Conn) -> Response:
+    return render_plans(request, conn)
+
+
+@router.post("/plans")
+def create_plan(
+    request: Request, conn: Conn, name: str = Form(""), description: str = Form("")
+) -> Response:
+    form = {"name": name, "description": description}
+    try:
+        with conn:
+            plan_id = library.create_plan(conn, PlanInput(**form))
+    except ValidationError as error:
+        return render_plans(request, conn, form, describe_errors(error), 422)
+    except library.DuplicatePlanError:
+        return render_plans(request, conn, form, ["That plan already exists."], 409)
+    return redirect(f"/plans/{plan_id}")
+
+
+@router.get("/plans/favorites", response_class=HTMLResponse)
+def favorites_plan(request: Request, conn: Conn) -> Response:
+    context = {"titles": library.list_titles(conn, favorite=True)}
+    return templates.TemplateResponse(request, "plan_favorites.html", context)
+
+
+@router.get("/plans/{plan_id}", response_class=HTMLResponse)
+def plan_page(request: Request, conn: Conn, plan_id: int) -> Response:
+    return render_plan(request, conn, require_plan(conn, plan_id))
+
+
+@router.post("/plans/{plan_id}")
+def update_plan(
+    request: Request, conn: Conn, plan_id: int, name: str = Form(""), description: str = Form("")
+) -> Response:
+    plan = require_plan(conn, plan_id)
+    form = {"name": name, "description": description}
+    try:
+        with conn:
+            library.update_plan(conn, plan_id, PlanInput(**form))
+    except ValidationError as error:
+        return render_plan(request, conn, plan, form, describe_errors(error), 422)
+    except library.DuplicatePlanError:
+        return render_plan(request, conn, plan, form, ["That plan already exists."], 409)
+    return redirect(f"/plans/{plan_id}")
+
+
+@router.post("/plans/{plan_id}/delete")
+def delete_plan(conn: Conn, plan_id: int) -> Response:
+    require_plan(conn, plan_id)
+    with conn:
+        library.delete_plan(conn, plan_id)
+    return redirect("/plans")
+
+
+@router.post("/plans/{plan_id}/items")
+def add_to_plan(conn: Conn, plan_id: int, title_id: int = Form(...)) -> Response:
+    require_plan(conn, plan_id)
+    require_title(conn, title_id)
+    with conn:
+        library.add_to_plan(conn, plan_id, title_id)
+    return redirect(f"/plans/{plan_id}")
+
+
+@router.post("/plans/{plan_id}/items/{title_id}/delete")
+def remove_from_plan(conn: Conn, plan_id: int, title_id: int) -> Response:
+    require_plan(conn, plan_id)
+    with conn:
+        library.remove_from_plan(conn, plan_id, title_id)
+    return redirect(f"/plans/{plan_id}")
 
 
 def stop_server() -> None:

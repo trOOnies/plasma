@@ -15,7 +15,7 @@ import sqlite3
 from datetime import date, timedelta
 from itertools import zip_longest
 
-from plasma.models import Details, Kind, PlatformInput, Status, TitleInput
+from plasma.models import Details, Kind, PlanInput, PlatformInput, Status, TitleInput
 
 TITLE_SELECT = """
     SELECT t.*, COUNT(e.id) AS episodes_total, COALESCE(SUM(e.watched), 0) AS episodes_watched
@@ -44,6 +44,10 @@ class DuplicateTitleError(Exception):
 
 
 class DuplicatePlatformError(Exception):
+    pass
+
+
+class DuplicatePlanError(Exception):
     pass
 
 
@@ -82,6 +86,7 @@ def list_titles(
     order: str = "t.name COLLATE NOCASE",
     favorite: bool = False,
     platform_id: int | None = None,
+    owned: bool = False,
 ) -> list[sqlite3.Row]:
     clauses, params = [], []
     if kind:
@@ -92,6 +97,8 @@ def list_titles(
         params.append(status.value)
     if favorite:
         clauses.append("t.favorite = 1")
+    if owned:
+        clauses.append("t.owned = 1")
     if platform_id:
         clauses.append("t.id IN (SELECT title_id FROM title_platforms WHERE platform_id = ?)")
         params.append(platform_id)
@@ -107,8 +114,9 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
     try:
         title_id = conn.execute(
             "INSERT INTO titles"
-            " (kind, name, year, status, rating, duration, release_date, description, notes,"
-            " watched_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " (kind, name, year, status, rating, duration, release_date, hours_played,"
+            " producer, description, notes, watched_on)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 data.kind.value,
                 data.name,
@@ -117,6 +125,8 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
                 data.rating,
                 data.duration,
                 iso_date(data.release_date),
+                data.hours_played,
+                data.producer,
                 data.description,
                 data.notes,
                 iso_date(data.watched_on),
@@ -136,7 +146,8 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
     try:
         conn.execute(
             "UPDATE titles SET name = ?, year = ?, status = ?, rating = ?, duration = ?,"
-            " release_date = ?, description = ?, notes = ?, watched_on = ?,"
+            " release_date = ?, hours_played = ?, producer = ?, description = ?, notes = ?,"
+            " watched_on = ?,"
             " updated_at = datetime('now')"
             " WHERE id = ?",
             (
@@ -146,6 +157,8 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
                 data.rating,
                 data.duration,
                 iso_date(data.release_date),
+                data.hours_played,
+                data.producer,
                 data.description,
                 data.notes,
                 iso_date(data.watched_on),
@@ -193,6 +206,10 @@ def set_image(conn: sqlite3.Connection, title_id: int, image: str) -> None:
 
 def toggle_favorite(conn: sqlite3.Connection, title_id: int) -> None:
     conn.execute("UPDATE titles SET favorite = NOT favorite WHERE id = ?", (title_id,))
+
+
+def toggle_owned(conn: sqlite3.Connection, title_id: int) -> None:
+    conn.execute("UPDATE titles SET owned = NOT owned WHERE id = ?", (title_id,))
 
 
 def season_counts(conn: sqlite3.Connection, title_id: int) -> list[int]:
@@ -338,7 +355,7 @@ def set_status(conn: sqlite3.Connection, title_id: int, status: Status) -> None:
     """Apply a one-click status change. Completing a series marks all of it watched."""
     title = get_title(conn, title_id)
     watched_on = None
-    if title["kind"] == Kind.MOVIE.value and status is Status.COMPLETED:
+    if title["kind"] != Kind.SERIES.value and status is Status.COMPLETED:
         watched_on = title["watched_on"] or _today()
     conn.execute(
         "UPDATE titles SET status = ?, watched_on = ?, updated_at = datetime('now') WHERE id = ?",
@@ -485,12 +502,92 @@ def fill_title_platforms(conn: sqlite3.Connection, title_id: int, names: list[st
     return True
 
 
+def list_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT p.*, COUNT(i.id) AS item_count"
+        " FROM plans p LEFT JOIN plan_items i ON i.plan_id = p.id"
+        " GROUP BY p.id ORDER BY p.name COLLATE NOCASE"
+    ).fetchall()
+
+
+def get_plan(conn: sqlite3.Connection, plan_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+
+
+def create_plan(conn: sqlite3.Connection, data: PlanInput) -> int:
+    try:
+        return conn.execute(
+            "INSERT INTO plans (name, description) VALUES (?, ?)", (data.name, data.description)
+        ).lastrowid
+    except sqlite3.IntegrityError as error:
+        raise DuplicatePlanError(data.name) from error
+
+
+def update_plan(conn: sqlite3.Connection, plan_id: int, data: PlanInput) -> None:
+    try:
+        conn.execute(
+            "UPDATE plans SET name = ?, description = ? WHERE id = ?",
+            (data.name, data.description, plan_id),
+        )
+    except sqlite3.IntegrityError as error:
+        raise DuplicatePlanError(data.name) from error
+
+
+def delete_plan(conn: sqlite3.Connection, plan_id: int) -> None:
+    conn.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+
+
+def plan_titles(conn: sqlite3.Connection, plan_id: int) -> list[sqlite3.Row]:
+    """The plan's titles, in the order they were added."""
+    return conn.execute(
+        f"{TITLE_SELECT} JOIN plan_items i ON i.title_id = t.id"
+        " WHERE i.plan_id = ? GROUP BY t.id ORDER BY i.id",
+        (plan_id,),
+    ).fetchall()
+
+
+def titles_outside_plan(conn: sqlite3.Connection, plan_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, name, kind, year FROM titles"
+        " WHERE id NOT IN (SELECT title_id FROM plan_items WHERE plan_id = ?)"
+        " ORDER BY name COLLATE NOCASE",
+        (plan_id,),
+    ).fetchall()
+
+
+def add_to_plan(conn: sqlite3.Connection, plan_id: int, title_id: int) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO plan_items (plan_id, title_id) VALUES (?, ?)", (plan_id, title_id)
+    )
+
+
+def remove_from_plan(conn: sqlite3.Connection, plan_id: int, title_id: int) -> None:
+    conn.execute(
+        "DELETE FROM plan_items WHERE plan_id = ? AND title_id = ?", (plan_id, title_id)
+    )
+
+
+def plans_for_title(conn: sqlite3.Connection, title_id: int) -> list[sqlite3.Row]:
+    """Every plan, saying whether it includes this title."""
+    return conn.execute(
+        "SELECT p.id, p.name, EXISTS ("
+        "SELECT 1 FROM plan_items i WHERE i.plan_id = p.id AND i.title_id = ?"
+        ") AS included FROM plans p ORDER BY p.name COLLATE NOCASE",
+        (title_id,),
+    ).fetchall()
+
+
+def favorite_count(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM titles WHERE favorite = 1").fetchone()[0]
+
+
 def stats(conn: sqlite3.Connection) -> dict[str, int | float | None]:
     row = conn.execute(
         """
         SELECT
             COALESCE(SUM(kind = 'movie' AND status = 'completed'), 0) AS movies_watched,
             COALESCE(SUM(kind = 'series' AND status = 'completed'), 0) AS series_completed,
+            COALESCE(SUM(kind = 'game' AND status = 'completed'), 0) AS games_finished,
             COALESCE(SUM(status = 'planned'), 0) AS planned,
             ROUND(AVG(rating), 1) AS average_rating,
             (SELECT COUNT(*) FROM episodes WHERE watched = 1) AS episodes_watched

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import title_row %}
+{% block title %}{{ plan.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/plans">Plans</a>
+</nav>
+<h1>{{ plan.name }}</h1>
+{% if plan.description %}<p class="description">{{ plan.description }}</p>{% endif %}
+
+{% if titles %}
+<ul class="rows">
+  {% for title in titles %}{{ title_row(title, "/plans/%d/items/%d/delete" % (plan.id, title.id)) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">This plan is empty. Add something below.</p>
+{% endif %}
+
+<h2>Add to this plan</h2>
+{% if available %}
+<form class="add-to-plan" method="post" action="/plans/{{ plan.id }}/items">
+  <select name="title_id" aria-label="Title to add" required>
+    {% for group in available | groupby("kind") | reverse %}
+    <optgroup label="{{ {"movie": "Movies", "series": "Series", "game": "Games"}[group.grouper] }}">
+      {% for title in group.list %}
+      <option value="{{ title.id }}">{{ title.name }}{% if title.year %} ({{ title.year }}){% endif %}</option>
+      {% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  <button class="primary">Add</button>
+</form>
+{% else %}
+<p class="muted">Everything in your library is already here.</p>
+{% endif %}
+
+<h2>Edit plan</h2>
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+<form class="stacked" method="post" action="/plans/{{ plan.id }}">
+  <label>Name
+    <input name="name" value="{{ form.name }}" required maxlength="100">
+  </label>
+  <label>Description (optional)
+    <textarea name="description" rows="2">{{ form.description }}</textarea>
+  </label>
+  <div class="actions">
+    <button class="primary">Save</button>
+  </div>
+</form>
+
+<form class="danger-zone" method="post" action="/plans/{{ plan.id }}/delete"
+      onsubmit="return confirm('Delete this plan? Its titles stay in your library.')">
+  <button class="danger">Delete plan</button>
+</form>
+{% endblock %}

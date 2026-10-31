@@ -18,6 +18,8 @@ from pydantic import (
 MAX_SEASONS = 99
 MAX_EPISODES_PER_SEASON = 999
 MAX_DURATION_MINUTES = 6000
+MAX_HOURS_PLAYED = 100_000
+FAVORITES_PLAN_NAME = "Favorites"
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
 
 
@@ -34,6 +36,7 @@ def describe_errors(error: ValidationError) -> list[str]:
 class Kind(str, Enum):
     MOVIE = "movie"
     SERIES = "series"
+    GAME = "game"
 
 
 class Status(str, Enum):
@@ -80,16 +83,18 @@ class TitleInput(Details):
     year: int | None = Field(default=None, ge=1870, le=2100)
     status: Status = Status.NONE
     rating: int | None = Field(default=None, ge=1, le=10)
+    hours_played: int | None = Field(default=None, ge=0, le=MAX_HOURS_PLAYED)
+    producer: str = Field(default="", max_length=200)
     notes: str = ""
     watched_on: date | None = None
     seasons: list[int] = Field(default_factory=list, max_length=MAX_SEASONS)
 
-    @field_validator("year", "rating", "watched_on", mode="before")
+    @field_validator("year", "rating", "hours_played", "watched_on", mode="before")
     @classmethod
     def blank_is_none(cls, value: Any) -> Any:
         return None if value == "" else value
 
-    @field_validator("notes", mode="before")
+    @field_validator("producer", "notes", mode="before")
     @classmethod
     def none_is_blank(cls, value: Any) -> Any:
         return "" if value is None else value
@@ -116,10 +121,14 @@ class TitleInput(Details):
 
     @model_validator(mode="after")
     def check_kind_fields(self) -> "TitleInput":
-        if self.kind is Kind.MOVIE and self.seasons:
+        if self.kind is not Kind.SERIES and self.seasons:
             raise ValueError("seasons only apply to series")
+        if self.kind is not Kind.GAME and self.hours_played is not None:
+            raise ValueError("hours_played only applies to games")
+        if self.kind is Kind.GAME and self.duration:
+            raise ValueError("duration doesn't apply to games, so use hours_played")
         if self.kind is Kind.SERIES and self.watched_on:
-            raise ValueError("watched_on only applies to movies")
+            raise ValueError("watched_on doesn't apply to series")
         if self.kind is Kind.SERIES and self.duration:
             raise ValueError("duration only applies to movies, so set it on each episode")
         return self
@@ -140,11 +149,26 @@ class PlatformInput(BaseModel):
         return value
 
 
+class PlanInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=100)
+    description: str = ""
+
+    @field_validator("name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        if value.casefold() == FAVORITES_PLAN_NAME.casefold():
+            raise ValueError(f"{FAVORITES_PLAN_NAME} is reserved for the built-in plan")
+        return value
+
+
 class ImportEntry(TitleInput):
     """A title in an info/ file, which can also say how far the user has got."""
 
     watched_through: tuple[int, int] | None = None
     image: str | None = None
+    owned: bool = False
     episodes: dict[tuple[int, int], Details] = Field(default_factory=dict)
     platforms: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(
         default_factory=list
@@ -154,6 +178,11 @@ class ImportEntry(TitleInput):
     @classmethod
     def parse_episode_code(cls, value: Any) -> Any:
         return None if value is None else parse_episode_code(value)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def playing_means_watching(cls, value: Any) -> Any:
+        return Status.WATCHING if value == "playing" else value
 
     @field_validator("platforms", mode="before")
     @classmethod
@@ -181,6 +210,8 @@ class ImportEntry(TitleInput):
 
     @model_validator(mode="after")
     def check_episodes_are_listed(self) -> "ImportEntry":
+        if self.owned and self.kind is not Kind.GAME:
+            raise ValueError("owned only applies to games")
         if self.watched_through and not self._is_listed(*self.watched_through):
             raise ValueError("watched_through is not an episode listed in seasons")
         for season, number in self.episodes:

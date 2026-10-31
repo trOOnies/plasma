@@ -10,6 +10,8 @@
     <nav class="help-jump" aria-label="Help topics">
       <a href="#around">🧭 Getting around</a>
       <a href="#tracking">✅ Tracking</a>
+      <a href="#games">🎮 Games</a>
+      <a href="#plans">🗂️ Plans</a>
       <a href="#status">🚦 Status</a>
       <a href="#details">💖 Favorites</a>
       <a href="#platforms">📡 Platforms</a>
@@ -26,16 +28,16 @@
         <p>Click <a href="/">plasma</a> for your stats, what's fresh, what's coming, and where you left off.</p>
       </div>
       <div class="help-card">
-        <h3>📺 Series &amp; 🎞️ Movies</h3>
-        <p>Browse <a href="/titles?kind=series">Series</a> or <a href="/titles?kind=movie">Movies</a>, then search or filter by status and favorites.</p>
+        <h3>📺 Series, 🎞️ Movies &amp; 🎮 Games</h3>
+        <p>Browse <a href="/titles?kind=series">Series</a>, <a href="/titles?kind=movie">Movies</a> or <a href="/titles?kind=game">Games</a>, then search or filter by status and favorites.</p>
       </div>
       <div class="help-card">
         <h3>📡 Platforms</h3>
-        <p>Your streaming services live in <a href="/platforms">one central list</a>.</p>
+        <p>Your streaming services and game stores live in <a href="/platforms">one central list</a>.</p>
       </div>
       <div class="help-card">
         <h3>➕ New stuff</h3>
-        <p>Use <strong>+ Series</strong> or <strong>+ Movie</strong> at the top right to add something new.</p>
+        <p>Use <strong>+ Series</strong>, <strong>+ Movie</strong> or <strong>+ Game</strong> at the top right to add something new.</p>
       </div>
     </div>
   </section>
@@ -70,6 +72,27 @@
     </div>
   </section>
 
+  <section class="help-section" id="games">
+    <h2>🎮 Tracking your games</h2>
+    <p>Games work just like movies, but with a controller in your hands. Open a game and click Planned, <strong>Playing</strong>, Completed or Dropped. 🕹️</p>
+    <ul class="help-list">
+      <li><span aria-hidden="true">⏱️</span> Keep count of your <strong>hours played</strong> under <strong>Edit</strong>. We won't judge.</li>
+      <li><span aria-hidden="true">🏠</span> Games you're playing show up under <strong>Playing now</strong> on the home page.</li>
+      <li><span aria-hidden="true">🏆</span> Mark one Completed and today becomes its finish date, unless you already set one.</li>
+      <li><span aria-hidden="true">📦</span> Click <strong>Mark as owned</strong> on a game you've got, then tick <strong>Owned</strong> on the Games tab to see your collection.</li>
+    </ul>
+  </section>
+
+  <section class="help-section" id="plans">
+    <h2>🗂️ Plans</h2>
+    <p>Plans are playlists for real life! Mix series, movies and games any way you like: family movie night 👨‍👩‍👧, game night with friends 🎲, couch time with your S.O. 🛋️, or a solo weekend 🧘.</p>
+    <ul class="help-list">
+      <li><span aria-hidden="true">➕</span> Make one on the <a href="/plans">Plans</a> tab, then add titles from its page.</li>
+      <li><span aria-hidden="true">👆</span> Or click a plan's name on any title's page to add or remove it in one go.</li>
+      <li><span aria-hidden="true">💖</span> <a href="/plans/favorites">Favorites</a> is built in and always there. It holds everything with a filled heart, so click a heart to add or remove something.</li>
+    </ul>
+  </section>
+
   <section class="help-section" id="status">
     <h2>🚦 How status works</h2>
     <p>New titles start with no status at all. Planned is your call! Click a status on a title's page to set it, and click it again to clear it.</p>
@@ -86,6 +109,7 @@
     <h2>💖 Favorites, descriptions &amp; notes</h2>
     <ul class="help-list">
       <li><span aria-hidden="true">🩷</span> Click the heart next to a title's name to make it a favorite.</li>
+      <li><span aria-hidden="true">🏢</span> Add a <strong>producer</strong> to any series, movie or game under <strong>Edit</strong>.</li>
       <li><span aria-hidden="true">📝</span> The <strong>description</strong> says what it's about, and <strong>notes</strong> are all yours. Both are under <strong>Edit</strong>.</li>
       <li><span aria-hidden="true">👀</span> Hover over an episode number for a quick peek at its details.</li>
     </ul>
@@ -93,7 +117,7 @@
 
   <section class="help-section" id="platforms">
     <h2>📡 Where to watch</h2>
-    <p>Add your services on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a series or movie. Each platform has a page listing everything you've got on it. 🎉</p>
+    <p>Add your services and stores on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a title. Each platform has a page listing everything you've got on it. 🎉</p>
   </section>
 
   <section class="help-section" id="import">
@@ -122,7 +146,16 @@ series:
       S01E01:
         duration: 60
         release_date: 2002-06-02
-        description: The first episode.</code></pre>
+        description: The first episode.
+
+games:
+  - name: Hades
+    year: 2020
+    producer: Supergiant Games
+    status: playing
+    hours_played: 42
+    owned: true
+    platforms: [Steam]</code></pre>
     </details>
     <p class="help-tip">👍 Importing again is safe. It won't undo anything you changed here, and only fills in what's still blank.</p>
     <h3>🖼️ Adding images</h3>

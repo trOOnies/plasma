@@ -1,8 +1,10 @@
 # plasma
 
-Personal TV series &amp; movies watch tracker. A FastAPI app with server-rendered pages, backed by a local SQLite file.
+Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.
 
 - Track movies and series as planned, watching, completed or dropped, with ratings and notes. Titles start with no status.
+- Track games too, with the hours you've played and which ones you own.
+- Group series, movies and games into plans, like playlists. A built-in Favorites plan holds everything you've marked with a heart.
 - Tick off episodes one at a time or by season. A series' status follows its progress.
 - See what to watch next on the home page, and search and filter the library.
 - Keep a duration, release date and description for every movie and episode.
@@ -54,12 +56,13 @@ Both of these folders are gitignored:
 
 The app needs the `info/` folder, an `info/images/` folder and an `info/library.yaml` file. If any of them is missing, `make serve` and `make import` create it empty. `make serve` then stops with an error explaining why, so add your titles, run `make import` and start it again. An empty `library.yaml` is valid, so the next `make serve` starts normally.
 
-Every `.yaml` or `.yml` file in `info/` is imported. Each one can have a `movies` list, a `series` list, or both:
+Every `.yaml` or `.yml` file in `info/` is imported. Each one can have `movies`, `series` and `games` lists, in any combination:
 
 ```yaml
 movies:
   - name: Arrival          # Required.
     year: 2016
+    producer: FilmNation Entertainment
     status: completed      # planned, watching, completed or dropped. Blank by default.
     rating: 9              # 1 to 10.
     duration: 116          # Minutes.
@@ -84,6 +87,15 @@ series:
   - name: Breaking Bad
     seasons: [7, 13, 13, 13, 16]
     status: completed               # Marks every episode watched.
+
+games:
+  - name: Hades
+    year: 2020
+    status: playing                 # Or watching, which means the same thing.
+    hours_played: 42
+    owned: true                     # Games only.
+    platforms: [Steam]
+    watched_on: 2024-08-17          # The day you finished it.
 ```
 
 The home page's Upcoming section shows releases in the next 90 days, and Just released shows the last 30. A series appears through its own `release_date` or any episode's, so give a new season's first episode a date to see it there.
@@ -96,13 +108,13 @@ Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
 ### Importing again
 
-Importing is safe to repeat. Status, watch dates and progress are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
+Importing is safe to repeat. Status, watch dates, progress and `owned` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
 
 A repeat import does these four things and nothing else:
 
 - Adds new titles.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
-- Fills in a rating, duration, release date, description, notes or platforms that are still blank, for titles and episodes.
+- Fills in a rating, duration, hours played, producer, release date, description, notes or platforms that are still blank, for titles and episodes.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.
 
 To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI.

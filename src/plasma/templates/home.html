@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, release_row %}
+{% from "_macros.html" import progress, release_row, title_row %}
 {% block content %}
 <section class="stats">
   <div><strong>{{ stats.movies_watched }}</strong> movies watched</div>
   <div><strong>{{ stats.series_completed }}</strong> series finished</div>
   <div><strong>{{ stats.episodes_watched }}</strong> episodes watched</div>
+  <div><strong>{{ stats.games_finished }}</strong> games finished</div>
   <div><strong>{{ stats.planned }}</strong> planned</div>
   <div><strong>{{ stats.average_rating or "–" }}</strong> average rating</div>
 </section>
@@ -49,6 +50,13 @@
 </ul>
 {% else %}
 <p class="muted">Nothing in progress. Mark an episode watched and the series shows up here.</p>
+{% endif %}
+
+{% if playing %}
+<h2>Playing now</h2>
+<ul class="rows">
+  {% for title in playing %}{{ title_row(title) }}{% endfor %}
+</ul>
 {% endif %}
 
 <h2>Up next</h2>

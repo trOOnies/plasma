@@ -1,10 +1,10 @@
 """Load titles from the YAML files in info/ into the library.
 
-A title's tracking fields (status, watch date, progress) are read the first time
-it is imported. After that the app owns them, so a re-import cannot undo anything
+A title's tracking fields (status, watch date, progress, owned) are read the first
+time it is imported. After that the app owns them, so a re-import cannot undo anything
 done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
-in a rating, duration, release date, description, notes or platforms that are still
-blank, and apply the image, which can only be set from info/.
+in a rating, duration, hours played, producer, release date, description, notes or
+platforms that are still blank, and apply the image, which can only be set from info/.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -26,7 +26,7 @@ INFO_DIR = Path("info")
 IMAGES_FOLDER = "images"
 REQUIRED_FOLDERS = (IMAGES_FOLDER,)
 REQUIRED_FILES = ("library.yaml",)
-SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES}
+SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES, "games": Kind.GAME}
 
 
 class ImportFileError(Exception):
@@ -83,7 +83,8 @@ def parse_file(path: Path) -> list[ImportEntry]:
     if document is None:
         return []
     if not isinstance(document, dict) or set(document) - set(SECTIONS):
-        raise ImportFileError([f"{path}: top level must only have 'movies' and 'series' lists"])
+        message = "top level must only have 'movies', 'series' and 'games' lists"
+        raise ImportFileError([f"{path}: {message}"])
 
     entries, problems = [], []
     for section, kind in SECTIONS.items():
@@ -137,6 +138,8 @@ def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> Impo
                 library.set_image(conn, title_id, entry.image)
             _fill_episodes(conn, title_id, entry)
             library.fill_title_platforms(conn, title_id, entry.platforms)
+            if entry.owned:
+                library.toggle_owned(conn, title_id)
             result.added += 1
             continue
         grew = library.extend_seasons(conn, existing["id"], entry.seasons)
@@ -145,6 +148,8 @@ def import_entries(conn: sqlite3.Connection, entries: list[ImportEntry]) -> Impo
             existing["id"],
             rating=entry.rating,
             duration=entry.duration,
+            hours_played=entry.hours_played,
+            producer=entry.producer,
             release_date=library.iso_date(entry.release_date),
             description=entry.description,
             notes=entry.notes,

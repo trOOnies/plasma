@@ -1,7 +1,15 @@
 import pytest
 from pydantic import ValidationError
 
-from plasma.models import Details, ImportEntry, Kind, PlatformInput, Status, TitleInput
+from plasma.models import (
+    Details,
+    ImportEntry,
+    Kind,
+    PlanInput,
+    PlatformInput,
+    Status,
+    TitleInput,
+)
 
 
 def test_blank_form_fields_become_none():
@@ -49,7 +57,7 @@ def test_rating_range(rating):
 def test_kind_specific_fields():
     with pytest.raises(ValidationError, match="seasons only apply"):
         TitleInput(kind="movie", name="Film", seasons=[3])
-    with pytest.raises(ValidationError, match="watched_on only applies"):
+    with pytest.raises(ValidationError, match="watched_on doesn't apply to series"):
         TitleInput(kind="series", name="Show", watched_on="2024-01-01")
 
 
@@ -91,6 +99,65 @@ def test_duration_range(duration):
 def test_blank_details():
     details = Details(duration="", description=None)
     assert (details.duration, details.description) == (None, "")
+
+
+@pytest.mark.parametrize("fields", [{"seasons": [3]}, {"duration": 90}])
+def test_game_rejects_fields_of_other_kinds(fields):
+    with pytest.raises(ValidationError):
+        TitleInput(kind="game", name="Hades", **fields)
+
+
+@pytest.mark.parametrize("kind", ["movie", "series"])
+def test_hours_played_only_applies_to_games(kind):
+    with pytest.raises(ValidationError, match="hours_played only applies to games"):
+        TitleInput(kind=kind, name="Title", hours_played=5)
+
+
+@pytest.mark.parametrize("hours", [0, 100_000])
+def test_hours_played_range(hours):
+    assert TitleInput(kind="game", name="Hades", hours_played=hours).hours_played == hours
+
+
+@pytest.mark.parametrize("hours", [-1, 100_001])
+def test_hours_played_out_of_range(hours):
+    with pytest.raises(ValidationError):
+        TitleInput(kind="game", name="Hades", hours_played=hours)
+
+
+def test_game_can_have_a_finish_date():
+    data = TitleInput(kind="game", name="Hades", watched_on="2024-08-17")
+    assert data.watched_on.isoformat() == "2024-08-17"
+
+
+def test_import_accepts_playing_as_a_status():
+    entry = ImportEntry(kind="game", name="Hades", status="playing")
+    assert entry.status is Status.WATCHING
+
+
+def test_producer_is_stored_on_every_kind():
+    for kind in ("movie", "series", "game"):
+        assert TitleInput(kind=kind, name="Title", producer=" Studio ").producer == "Studio"
+
+
+def test_blank_producer_from_yaml():
+    assert TitleInput(kind="movie", name="Film", producer=None).producer == ""
+
+
+@pytest.mark.parametrize("kind", ["movie", "series"])
+def test_owned_only_applies_to_games(kind):
+    with pytest.raises(ValidationError, match="owned only applies to games"):
+        ImportEntry(kind=kind, name="Title", owned=True)
+
+
+def test_plan_needs_a_name():
+    with pytest.raises(ValidationError):
+        PlanInput(name="   ")
+
+
+@pytest.mark.parametrize("name", ["Favorites", "favorites", " FAVORITES "])
+def test_favorites_is_a_reserved_plan_name(name):
+    with pytest.raises(ValidationError, match="reserved"):
+        PlanInput(name=name)
 
 
 def test_series_duration_is_rejected():

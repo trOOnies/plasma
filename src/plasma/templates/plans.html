@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import heart %}
+{% block title %}Plans · Plasma{% endblock %}
+{% block content %}
+<h1>Plans</h1>
+<p class="muted">Group series, movies and games however you like, such as family night or games with friends.</p>
+
+<ul class="rows">
+  <li>
+    <span class="favorite-mark">{{ heart() }}</span>
+    <a href="/plans/favorites">{{ favorites_plan_name }}</a>
+    <span class="plan-builtin">built in</span>
+    <span class="muted">{{ favorite_count }} title{{ "" if favorite_count == 1 else "s" }}</span>
+  </li>
+  {% for plan in plans %}
+  <li>
+    <a href="/plans/{{ plan.id }}">{{ plan.name }}</a>
+    <span class="muted">{{ plan.item_count }} title{{ "" if plan.item_count == 1 else "s" }}</span>
+  </li>
+  {% endfor %}
+</ul>
+
+<h2>New plan</h2>
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+<form class="stacked" method="post" action="/plans">
+  <label>Name
+    <input name="name" value="{{ form.name }}" required maxlength="100" placeholder="Family night">
+  </label>
+  <label>Description (optional)
+    <textarea name="description" rows="2">{{ form.description }}</textarea>
+  </label>
+  <div class="actions">
+    <button class="primary">Create plan</button>
+  </div>
+</form>
+{% endblock %}

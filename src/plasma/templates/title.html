@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import heart, progress %}
+{% from "_macros.html" import heart, progress, status_label %}
 {% block title %}{{ title.name }} · Plasma{% endblock %}
 {% block content %}
 <div class="title-layout{% if title.image %} has-poster{% endif %}">
@@ -23,6 +23,11 @@
           <button class="primary">Watched {{ next_episode | episode_code }}</button>
         </form>
         {% endif %}
+        {% if title.kind == "game" %}
+        <form method="post" action="/titles/{{ title.id }}/owned">
+          <button class="owned-toggle" aria-pressed="{{ 'true' if title.owned else 'false' }}">{{ "✓ Owned" if title.owned else "Mark as owned" }}</button>
+        </form>
+        {% endif %}
         <a class="button" href="/titles/{{ title.id }}/edit">Edit</a>
       </div>
     </div>
@@ -30,15 +35,17 @@
     <form class="status-picker" method="post" action="/titles/{{ title.id }}/status" aria-label="Status">
       {% for option in picker_statuses %}
       {% set active = title.status == option.value %}
-      <button class="status-{{ option.value }}" name="status" value="{{ 'none' if active else option.value }}" aria-pressed="{{ 'true' if active else 'false' }}"{% if option.value in locked_statuses %} disabled title="Follows your episodes"{% elif active %} title="Click to clear"{% endif %}>{{ option.value | capitalize }}</button>
+      <button class="status-{{ option.value }}" name="status" value="{{ 'none' if active else option.value }}" aria-pressed="{{ 'true' if active else 'false' }}"{% if option.value in locked_statuses %} disabled title="Follows your episodes"{% elif active %} title="Click to clear"{% endif %}>{{ status_label(option.value, title.kind) }}</button>
       {% endfor %}
     </form>
 
     <p class="meta">
       {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
+      {% if title.producer %}<span class="muted">Producer: {{ title.producer }}</span>{% endif %}
       {% if title.duration %}<span class="muted">{{ title.duration | duration }}</span>{% endif %}
       {% if title.release_date %}<span class="muted">Release date: {{ title.release_date | long_date }}</span>{% endif %}
-      {% if title.kind == "movie" and title.watched_on %}<span class="muted">Watched {{ title.watched_on }}</span>{% endif %}
+      {% if title.hours_played is not none %}<span class="muted">{{ title.hours_played }}h played</span>{% endif %}
+      {% if title.kind != "series" and title.watched_on %}<span class="muted">{{ "Finished" if title.kind == "game" else "Watched" }} {{ title.watched_on }}</span>{% endif %}
     </p>
 
     {% if platforms %}
@@ -52,6 +59,19 @@
     <h2>Your notes</h2>
     <p class="notes">{{ title.notes }}</p>
     {% endif %}
+
+    <section id="plans">
+      <h2>Plans</h2>
+      {% if plans %}
+      <form class="plan-picker" method="post">
+        {% for plan in plans %}
+        <button formaction="/titles/{{ title.id }}/plans/{{ plan.id }}" aria-pressed="{{ 'true' if plan.included else 'false' }}">{{ "✓ " if plan.included }}{{ plan.name }}</button>
+        {% endfor %}
+      </form>
+      {% else %}
+      <p class="muted">No plans yet. <a href="/plans">Make one</a> to group this with other titles.</p>
+      {% endif %}
+    </section>
   </div>
 </div>
 

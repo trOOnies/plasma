@@ -3,7 +3,7 @@
 {% set series = form.kind == "series" %}
 {% block title %}{{ "Edit" if title_id else "Add" }} · Plasma{% endblock %}
 {% block content %}
-<h1>{{ "Edit" if title_id else "Add" }} {{ "series" if series else "movie" }}</h1>
+<h1>{{ "Edit" if title_id else "Add" }} {{ form.kind }}</h1>
 
 {% if errors %}
 <ul class="errors" role="alert">
@@ -17,6 +17,9 @@
   <label>Name
     <input name="name" value="{{ form.name }}" required maxlength="200" autofocus>
   </label>
+  <label>Producer
+    <input name="producer" value="{{ form.producer }}" maxlength="200">
+  </label>
   <div class="field-row">
     <label>Year
       <input name="year" type="number" min="1870" max="2100" value="{{ form.year }}">
@@ -27,7 +30,7 @@
     <label>Status
       <select name="status">
         {% for option in statuses %}
-        <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ status_label(option.value) }}</option>
+        <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ status_label(option.value, form.kind) }}</option>
         {% endfor %}
       </select>
     </label>
@@ -50,17 +53,26 @@
     <label>Release date
       <input name="release_date" type="date" value="{{ form.release_date }}">
     </label>
+    {% if form.kind == "game" %}
+    <label>Hours played
+      <input name="hours_played" type="number" min="0" max="100000" value="{{ form.hours_played }}">
+    </label>
+    <label>Finished on
+      <input name="watched_on" type="date" value="{{ form.watched_on }}">
+    </label>
+    {% else %}
     <label>Duration (minutes)
       <input name="duration" type="number" min="1" max="6000" value="{{ form.duration }}">
     </label>
     <label>Watched on
       <input name="watched_on" type="date" value="{{ form.watched_on }}">
     </label>
+    {% endif %}
   </div>
   {% endif %}
 
   <fieldset class="platform-picker">
-    <legend>Where to watch</legend>
+    <legend>Where to {{ "play" if form.kind == "game" else "watch" }}</legend>
     {% for platform in platforms %}
     <label><input type="checkbox" name="platform_ids" value="{{ platform.id }}" {% if platform.id in platform_ids %}checked{% endif %}> {{ platform.name }}</label>
     {% else %}

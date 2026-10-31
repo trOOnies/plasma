@@ -2,7 +2,7 @@ import sqlite3
 
 from plasma import library
 from plasma.db import SCHEMA_VERSION, connect
-from plasma.models import Status
+from plasma.models import Kind, Status, TitleInput
 
 # The schema as first released, without the columns added since.
 FIRST_SCHEMA = """
@@ -111,6 +111,105 @@ def test_upgrade_from_version_1_keeps_planned_titles(db_path):
     assert library.get_title(conn, 1)["status"] == "planned"
     assert library.get_title(conn, 1)["release_date"] is None
     assert library.list_platforms(conn) == []
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()
+
+
+# Version 2, the release before games: titles couldn't have the game kind.
+VERSION_2_SCHEMA = """
+CREATE TABLE titles (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('movie', 'series')),
+    name TEXT NOT NULL,
+    year INTEGER,
+    status TEXT NOT NULL DEFAULT 'none'
+        CHECK (status IN ('none', 'planned', 'watching', 'completed', 'dropped')),
+    rating INTEGER CHECK (rating BETWEEN 1 AND 10),
+    duration INTEGER,
+    release_date TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    favorite INTEGER NOT NULL DEFAULT 0,
+    image TEXT,
+    watched_on TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX titles_identity
+    ON titles (kind, name COLLATE NOCASE, COALESCE(year, 0));
+CREATE TABLE episodes (
+    id INTEGER PRIMARY KEY,
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    season INTEGER NOT NULL,
+    number INTEGER NOT NULL,
+    duration INTEGER,
+    release_date TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    watched INTEGER NOT NULL DEFAULT 0,
+    watched_on TEXT,
+    UNIQUE (title_id, season, number)
+);
+CREATE TABLE platforms (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    url TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE title_platforms (
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    platform_id INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE,
+    PRIMARY KEY (title_id, platform_id)
+);
+INSERT INTO titles (id, kind, name, status, favorite, release_date)
+    VALUES (1, 'movie', 'Film', 'planned', 1, '2026-11-20'),
+           (2, 'series', 'Show', 'watching', 0, NULL);
+INSERT INTO episodes (title_id, season, number, watched, duration)
+    VALUES (2, 1, 1, 1, 45), (2, 1, 2, 0, NULL);
+INSERT INTO platforms (id, name) VALUES (1, 'Netflix');
+INSERT INTO title_platforms (title_id, platform_id) VALUES (1, 1), (2, 1);
+PRAGMA user_version = 2;
+"""
+
+
+def test_upgrade_from_version_2_keeps_everything_and_allows_games(db_path):
+    old_database(db_path, VERSION_2_SCHEMA)
+    conn = connect(db_path)
+
+    film, show = library.get_title(conn, 1), library.get_title(conn, 2)
+    assert (film["status"], film["favorite"], film["release_date"]) == (
+        "planned",
+        1,
+        "2026-11-20",
+    )
+    assert (show["episodes_total"], show["episodes_watched"]) == (2, 1)
+    assert library.episodes_by_season(conn, 2)[1][0]["duration"] == 45
+    assert [row["name"] for row in library.title_platforms(conn, 1)] == ["Netflix"]
+    assert (film["producer"], film["owned"]) == ("", 0)
+    assert library.list_plans(conn) == []
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    with conn:
+        library.create_title(conn, TitleInput(kind="game", name="Hades", hours_played=5))
+    assert library.list_titles(conn, Kind.GAME)[0]["hours_played"] == 5
+    conn.close()
+
+
+def test_upgrade_from_version_3_keeps_data_without_a_rebuild(db_path):
+    conn = connect(db_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO titles (kind, name, status, hours_played)"
+            " VALUES ('game', 'Hades', 'planned', 5)"
+        )
+    conn.execute("ALTER TABLE titles DROP COLUMN producer")
+    conn.execute("ALTER TABLE titles DROP COLUMN owned")
+    conn.executescript("DROP TABLE plan_items; DROP TABLE plans;")
+    conn.execute("PRAGMA user_version = 3")
+    conn.close()
+
+    conn = connect(db_path)
+    title = library.get_title(conn, 1)
+    assert (title["status"], title["hours_played"]) == ("planned", 5)
+    assert (title["producer"], title["owned"]) == ("", 0)
+    assert library.list_plans(conn) == []
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     conn.close()
 

@@ -367,8 +367,9 @@ def test_home_links_to_the_next_episode(client, conn):
 def test_nav_order_and_no_library_tab(client):
     page = client.get("/").text
     nav = page.split("<nav>")[1].split("</nav>")[0]
-    assert re.findall(r">(\w+)</a>", nav) == ["Series", "Movies", "Platforms", "Help"]
-    assert page.index("+ Series") < page.index("+ Movie")
+    tabs = ["Series", "Movies", "Games", "Plans", "Platforms", "Help"]
+    assert re.findall(r">(\w+)</a>", nav) == tabs
+    assert page.index("+ Series") < page.index("+ Movie") < page.index("+ Game")
 
 
 def test_home_shows_upcoming_and_just_released(client, conn):
@@ -483,6 +484,237 @@ def test_title_form_ignores_unknown_platforms(client, conn):
     assert library.title_platforms(conn, library.list_titles(conn)[0]["id"]) == []
 
 
+def add_game(client, **fields) -> str:
+    form = {"kind": "game", "name": "Hades", **fields}
+    return client.post("/titles", data=form).headers["location"]
+
+
+def test_games_tab_lists_only_games(client, conn):
+    add(conn, movie("A Movie"))
+    add_game(client)
+    page = client.get("/titles?kind=game").text
+    assert "<h1>Games</h1>" in page and "Hades" in page and "A Movie" not in page
+
+
+def test_game_form_fields(client):
+    page = client.get("/titles/new?kind=game").text
+    assert "Add game" in page and "Hours played" in page and "Finished on" in page
+    assert "Where to play" in page
+    assert 'name="duration"' not in page and 'name="seasons"' not in page
+    assert 'name="hours_played"' not in client.get("/titles/new?kind=movie").text
+
+
+def test_game_page_says_playing_and_hours(client):
+    location = add_game(client, hours_played="42", status="watching")
+    page = client.get(location).text
+    assert ">Playing</button>" in page and ">Watching<" not in page
+    assert "42h played" in page
+    assert 'value="42"' in client.get(f"{location}/edit").text
+    assert ">playing</span>" in client.get("/titles?kind=game").text
+
+
+def test_zero_hours_played_is_shown(client):
+    assert "0h played" in client.get(add_game(client, hours_played="0")).text
+
+
+def test_movie_still_says_watching(client, conn):
+    title_id = add(conn, movie(status=Status.WATCHING))
+    assert ">Watching</button>" in client.get(f"/titles/{title_id}").text
+    assert ">watching</span>" in client.get("/titles").text
+
+
+def test_game_status_filter_says_playing(client):
+    assert ">Playing</option>" in client.get("/titles?kind=game").text
+    assert ">Watching</option>" in client.get("/titles?kind=movie").text
+
+
+def test_finishing_a_game_stamps_the_date(client):
+    location = add_game(client, status="completed")
+    assert f"Finished {date.today().isoformat()}" in client.get(location).text
+
+
+def test_home_shows_games_being_played_and_finished(client, conn):
+    assert "Playing now" not in client.get("/").text
+    add_game(client, status="watching")
+    add_game(client, name="Celeste", status="completed")
+    page = client.get("/").text
+    assert "Playing now" in page and "Hades" in page
+    assert "<strong>1</strong> games finished" in page
+
+
+def test_game_can_be_on_a_platform(client, conn):
+    with conn:
+        steam = library.create_platform(conn, PlatformInput(name="Steam"))
+    location = add_game(client, platform_ids=[steam])
+    assert "Steam" in client.get(location).text
+    assert "Hades" in client.get(f"/platforms/{steam}").text
+
+
+def test_invalid_game_form_keeps_the_game_fields(client):
+    form = {"kind": "game", "name": "", "hours_played": "7"}
+    response = client.post("/titles", data=form)
+    assert response.status_code == 422
+    assert 'name="hours_played"' in response.text and 'value="7"' in response.text
+
+
+@pytest.mark.parametrize("kind", ["movie", "series", "game"])
+def test_producer_through_the_forms(client, kind):
+    assert 'name="producer"' in client.get(f"/titles/new?kind={kind}").text
+    form = {"kind": kind, "name": "Title", "producer": "A24"}
+    location = client.post("/titles", data=form).headers["location"]
+    assert "Producer: A24" in client.get(location).text
+    assert 'value="A24"' in client.get(f"{location}/edit").text
+
+
+def test_owned_button_toggles_on_games(client, conn):
+    location = add_game(client)
+    title_id = int(location.rsplit("/", 1)[1])
+    assert "Mark as owned" in client.get(location).text
+    assert client.post(f"{location}/owned").headers["location"] == location
+    assert "✓ Owned" in client.get(location).text
+    assert library.get_title(conn, title_id)["owned"] == 1
+    assert "· owned" in client.get("/titles?kind=game").text
+    client.post(f"{location}/owned")
+    assert library.get_title(conn, title_id)["owned"] == 0
+
+
+@pytest.mark.parametrize("data", [movie(), series()])
+def test_owned_is_only_for_games(client, conn, data):
+    title_id = add(conn, data)
+    assert "Mark as owned" not in client.get(f"/titles/{title_id}").text
+    assert client.post(f"/titles/{title_id}/owned").status_code == 404
+
+
+def test_owned_filter_is_on_the_games_tab(client):
+    assert 'name="owned"' in client.get("/titles?kind=game").text
+    assert 'name="owned"' not in client.get("/titles?kind=movie").text
+    client.post(f"{add_game(client)}/owned")
+    add_game(client, name="Celeste")
+    page = client.get("/titles?kind=game&owned=true").text
+    assert "Hades" in page and "Celeste" not in page
+
+
+def test_editing_a_game_through_the_form_keeps_it_owned(client, conn):
+    location = add_game(client)
+    client.post(f"{location}/owned")
+    client.post(location, data={"name": "Hades", "hours_played": "5"})
+    assert library.list_titles(conn)[0]["owned"] == 1
+
+
+def make_plan(client, name: str = "Family") -> str:
+    return client.post("/plans", data={"name": name}).headers["location"]
+
+
+def test_plans_page_always_shows_favorites_first(client):
+    make_plan(client, "Alone")
+    page = client.get("/plans").text
+    assert page.index('href="/plans/favorites"') < page.index("Alone")
+
+
+def test_plan_mixes_series_movies_and_games(client, conn):
+    plan = make_plan(client)
+    show = add(conn, series("A show"))
+    film = add(conn, movie("A film"))
+    game = int(add_game(client, name="A game").rsplit("/", 1)[1])
+    for title_id in (show, film, game):
+        assert client.post(f"{plan}/items", data={"title_id": title_id}).status_code == 303
+    page = client.get(plan).text
+    assert "A show" in page and "A film" in page and "A game" in page
+    assert "3 titles" in client.get("/plans").text
+
+
+def test_plan_add_list_only_offers_what_is_missing(client, conn):
+    plan = make_plan(client)
+    inside = add(conn, movie("Inside"))
+    outside = add(conn, movie("Outside"))
+    client.post(f"{plan}/items", data={"title_id": inside})
+    page = client.get(plan).text
+    assert f'<option value="{outside}">' in page
+    assert f'<option value="{inside}">' not in page
+
+
+def test_plan_remove_button(client, conn):
+    plan = make_plan(client)
+    film = add(conn, movie("A film"))
+    client.post(f"{plan}/items", data={"title_id": film})
+    assert client.post(f"{plan}/items/{film}/delete").headers["location"] == plan
+    assert "This plan is empty" in client.get(plan).text
+    assert library.get_title(conn, film) is not None
+
+
+def test_plan_buttons_on_the_title_page(client, conn):
+    plan = make_plan(client)
+    plan_id = plan.rsplit("/", 1)[1]
+    film = add(conn, movie("A film"))
+    url = f"/titles/{film}/plans/{plan_id}"
+    assert f'formaction="{url}" aria-pressed="false"' in client.get(f"/titles/{film}").text
+    assert client.post(url).headers["location"] == f"/titles/{film}#plans"
+    assert f'formaction="{url}" aria-pressed="true"' in client.get(f"/titles/{film}").text
+    assert "A film" in client.get(plan).text
+    client.post(url)
+    assert "This plan is empty" in client.get(plan).text
+
+
+def test_title_page_without_plans_points_to_the_tab(client, conn):
+    assert "No plans yet" in client.get(f"/titles/{add(conn, movie())}").text
+
+
+def test_plan_edit_and_delete(client):
+    plan = make_plan(client, "One")
+    make_plan(client, "Two")
+    form = {"name": "Uno", "description": "For the family"}
+    assert client.post(plan, data=form).status_code == 303
+    assert "For the family" in client.get(plan).text
+    assert client.post(plan, data={"name": "two"}).status_code == 409
+    assert client.post(plan, data={"name": ""}).status_code == 422
+    assert client.post(f"{plan}/delete").headers["location"] == "/plans"
+    assert client.get(plan).status_code == 404
+
+
+def test_duplicate_plan_is_rejected(client):
+    make_plan(client)
+    response = client.post("/plans", data={"name": "FAMILY"})
+    assert response.status_code == 409
+    assert "already exists" in response.text
+
+
+def test_favorites_plan_follows_the_hearts(client, conn):
+    film = add(conn, movie("Loved film"))
+    show = add(conn, series("Loved show"))
+    add(conn, movie("Other"))
+    client.post(f"/titles/{film}/favorite")
+    client.post(f"/titles/{show}/favorite")
+
+    page = client.get("/plans/favorites").text
+    assert "Loved film" in page and "Loved show" in page and "Other" not in page
+    assert "2 titles" in client.get("/plans").text
+
+    client.post(f"/titles/{film}/favorite")
+    assert "Loved film" not in client.get("/plans/favorites").text
+
+
+def test_favorites_plan_is_there_on_an_empty_library(client):
+    page = client.get("/plans/favorites")
+    assert page.status_code == 200
+    assert "No favorites yet" in page.text
+    assert 'href="/plans/favorites"' in client.get("/plans").text
+
+
+def test_favorites_plan_cannot_be_changed_or_deleted(client):
+    assert 'action="/plans/favorites' not in client.get("/plans/favorites").text
+    assert client.post("/plans/favorites/delete").status_code == 422
+    assert client.get("/plans/favorites").status_code == 200
+
+
+@pytest.mark.parametrize("name", ["Favorites", "FAVORITES"])
+def test_no_plan_can_take_the_favorites_name(client, name):
+    response = client.post("/plans", data={"name": name})
+    assert response.status_code == 422
+    assert "reserved" in response.text
+    response = client.post(make_plan(client), data={"name": name})
+    assert response.status_code == 422
+
+
 def test_exit_says_goodbye_and_stops_the_server(client, monkeypatch):
     stopped = []
     monkeypatch.setattr(web, "stop_server", lambda: stopped.append(True))
@@ -578,6 +810,12 @@ def test_names_are_escaped(client, conn):
         ("get", "/titles/999/episodes/1/1/edit"),
         ("post", "/titles/999/episodes/1/1/details"),
         ("get", "/platforms/999"),
+        ("get", "/plans/999"),
+        ("post", "/plans/999"),
+        ("post", "/plans/999/delete"),
+        ("post", "/plans/999/items/1/delete"),
+        ("post", "/titles/999/owned"),
+        ("post", "/titles/999/plans/1"),
         ("post", "/platforms/999"),
         ("post", "/platforms/999/delete"),
         ("post", "/titles/999/seasons/1/details"),

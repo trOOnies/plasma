@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import heart, title_row %}
+{% block title %}{{ favorites_plan_name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/plans">Plans</a>
+</nav>
+<h1><span class="favorite-mark">{{ heart() }}</span> {{ favorites_plan_name }}</h1>
+<p class="muted">This built-in plan holds everything with a filled heart. Click the heart on a title to add or remove it.</p>
+
+{% if titles %}
+<ul class="rows">
+  {% for title in titles %}{{ title_row(title) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">No favorites yet. Open a title and click its heart.</p>
+{% endif %}
+{% endblock %}
