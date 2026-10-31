@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, status_badge %}
+{% block title %}{{ title.name }} · Plasma{% endblock %}
+{% block content %}
+<div class="title-head">
+  <div>
+    <h1>{{ title.name }}{% if title.year %} <span class="muted">({{ title.year }})</span>{% endif %}</h1>
+    <p>
+      {{ status_badge(title.status) }}
+      {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
+      {% if title.kind == "movie" and title.watched_on %}<span class="muted">Watched {{ title.watched_on }}</span>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if title.kind == "movie" %}
+    <form method="post" action="/titles/{{ title.id }}/watched">
+      {% if title.status == "completed" %}
+      <button>Mark unwatched</button>
+      {% else %}
+      <button class="primary">Mark watched</button>
+      {% endif %}
+    </form>
+    {% elif next_episode %}
+    <form method="post" action="/titles/{{ title.id }}/next">
+      <button class="primary">Watched {{ next_episode | episode_code }}</button>
+    </form>
+    {% endif %}
+    <a class="button" href="/titles/{{ title.id }}/edit">Edit</a>
+  </div>
+</div>
+
+{% if title.notes %}<p class="notes">{{ title.notes }}</p>{% endif %}
+
+{% if title.kind == "series" %}
+  {% if seasons %}
+  {{ progress(title) }}
+  <p class="muted">{{ title.episodes_watched }} of {{ title.episodes_total }} episodes watched</p>
+  <form method="post">
+    {% for season, episodes in seasons.items() %}
+    {% set watched = episodes | selectattr("watched") | list | length %}
+    <section class="season" id="season-{{ season }}">
+      <div class="season-head">
+        <h2>Season {{ season }}</h2>
+        <span class="muted">{{ watched }}/{{ episodes | length }}</span>
+        <button class="small" name="watched" value="{{ 'false' if watched == episodes | length else 'true' }}"
+                formaction="/titles/{{ title.id }}/seasons/{{ season }}">
+          {{ "Clear season" if watched == episodes | length else "Mark season watched" }}
+        </button>
+      </div>
+      <div class="episodes">
+        {% for episode in episodes %}
+        <button class="episode{% if episode.watched %} watched{% endif %}"
+                formaction="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}"
+                aria-pressed="{{ 'true' if episode.watched else 'false' }}"
+                aria-label="{{ episode | episode_code }}"
+                {% if episode.watched_on %}title="Watched {{ episode.watched_on }}"{% endif %}>{{ episode.number }}</button>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </form>
+  {% else %}
+  <p class="muted">No episodes yet. <a href="/titles/{{ title.id }}/edit">Add the season sizes</a> to track progress.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set series = form.kind == "series" %}
+{% block title %}{{ "Edit" if title_id else "Add" }} · Plasma{% endblock %}
+{% block content %}
+<h1>{{ "Edit" if title_id else "Add" }} {{ "series" if series else "movie" }}</h1>
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form class="stacked" method="post" action="{{ '/titles/%d' % title_id if title_id else '/titles' }}">
+  {% if not title_id %}<input type="hidden" name="kind" value="{{ form.kind }}">{% endif %}
+
+  <label>Name
+    <input name="name" value="{{ form.name }}" required maxlength="200" autofocus>
+  </label>
+  <div class="field-row">
+    <label>Year
+      <input name="year" type="number" min="1870" max="2100" value="{{ form.year }}">
+    </label>
+    <label>Rating (1–10)
+      <input name="rating" type="number" min="1" max="10" value="{{ form.rating }}">
+    </label>
+    <label>Status
+      <select name="status">
+        {% for option in statuses %}
+        <option value="{{ option.value }}" {% if form.status == option.value %}selected{% endif %}>{{ option.value | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  {% if series %}
+  <label>Episodes per season
+    <input name="seasons" value="{{ form.seasons }}" placeholder="7, 13, 13">
+    <small class="muted">
+      Status follows your episodes unless the series is dropped.
+      Lowering a number discards the watch history of the episodes removed.
+    </small>
+  </label>
+  {% else %}
+  <label>Watched on
+    <input name="watched_on" type="date" value="{{ form.watched_on }}">
+  </label>
+  {% endif %}
+
+  <label>Notes
+    <textarea name="notes" rows="4">{{ form.notes }}</textarea>
+  </label>
+
+  <div class="actions">
+    <button class="primary">Save</button>
+    <a class="button" href="{{ '/titles/%d' % title_id if title_id else '/titles' }}">Cancel</a>
+  </div>
+</form>
+
+{% if title_id %}
+<form class="danger-zone" method="post" action="/titles/{{ title_id }}/delete"
+      onsubmit="return confirm('Delete this title and its watch history?')">
+  <button class="danger">Delete title</button>
+</form>
+{% endif %}
+{% endblock %}

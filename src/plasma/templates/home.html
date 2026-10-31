@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress %}
+{% block content %}
+<section class="stats">
+  <div><strong>{{ stats.movies_watched }}</strong> movies watched</div>
+  <div><strong>{{ stats.series_completed }}</strong> series finished</div>
+  <div><strong>{{ stats.episodes_watched }}</strong> episodes watched</div>
+  <div><strong>{{ stats.planned }}</strong> planned</div>
+  <div><strong>{{ stats.average_rating or "–" }}</strong> average rating</div>
+</section>
+
+<h2>Continue watching</h2>
+{% if continuing %}
+<ul class="cards">
+  {% for title, episode in continuing %}
+  <li class="card">
+    <a class="card-title" href="/titles/{{ title.id }}">{{ title.name }}</a>
+    {{ progress(title) }}
+    <p class="muted">{{ title.episodes_watched }} of {{ title.episodes_total }} episodes</p>
+    {% if episode %}
+    <form method="post" action="/titles/{{ title.id }}/next">
+      <input type="hidden" name="back" value="home">
+      <button class="primary">Watched {{ episode | episode_code }}</button>
+    </form>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing in progress. Mark an episode watched and the series shows up here.</p>
+{% endif %}
+
+<h2>Up next</h2>
+{% if planned %}
+<ul class="rows">
+  {% for title in planned %}
+  <li>
+    <a href="/titles/{{ title.id }}">{{ title.name }}</a>
+    <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Your watchlist is empty. Add a title, or run <code>make import</code> to load the files in info/.</p>
+{% endif %}
+{% endblock %}

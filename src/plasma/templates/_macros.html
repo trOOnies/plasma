@@ -1,0 +1,9 @@
+{% macro status_badge(status) %}<span class="badge badge-{{ status }}">{{ status }}</span>{% endmacro %}
+
+{% macro progress(title) %}
+{% if title.episodes_total %}
+<div class="progress" role="img" aria-label="{{ title.episodes_watched }} of {{ title.episodes_total }} episodes watched">
+  <div style="width: {{ (100 * title.episodes_watched / title.episodes_total) | round(1) }}%"></div>
+</div>
+{% endif %}
+{% endmacro %}
