@@ -4,10 +4,11 @@
 
 Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.
 
-- Track movies and series as planned, watching, completed or dropped, with ratings and notes. Titles start with no status.
-- Track games too, with the hours you've played and which ones you own. Singleplayer and multiplayer each keep their own status, and multiplayer can't be completed.
+- Track movies and series as planned, watching, completed or dropped, with notes and a rating of 1 to 5 stars, which episodes can have too. Titles start with no status.
+- Link series, movies and games into a franchise, and step through it in release order.
+- Track games too, with the hours you've played and whether you want or own each one. Singleplayer and multiplayer each keep their own status, and multiplayer can't be completed.
 - Tag titles with genres and an age restriction, then filter the library by either.
-- Group series, movies and games into plans, like playlists. A built-in Favorites plan holds everything you've marked with a heart.
+- Group series, movies and games into plans, like playlists. Built-in plans hold everything you've marked with a heart (Favorites) or as planned (Planned).
 - Add seasons with New season, change them with the pencil icon, and tick off episodes one at a time or by season. A series' status follows its progress.
 - See what to watch next on the home page, and search, filter and page through the library.
 - Keep a duration, release date and description for every movie and episode.
@@ -84,6 +85,7 @@ streaming_service:
     image: netflix.png             # A file in info/images/platform/.
 game_console:
   - name: PlayStation 5
+    release_year: 2020             # Game consoles only.
 
 # movie.yaml
 movie:
@@ -91,7 +93,8 @@ movie:
     year: 2016
     producer: FilmNation Entertainment
     status: completed      # planned, watching, completed or dropped. Blank by default.
-    rating: 9              # 1 to 10.
+    rating: 5              # 1 to 5 stars.
+    franchise: Arrival     # Titles sharing this link up in release order.
     duration: 116          # Minutes.
     release_date: 2016-11-11
     genres: [Drama, Sci-Fi]        # From the app's genre list, which differs for games.
@@ -108,10 +111,11 @@ series:
     year: 2002
     seasons: [13, 12, 12, 13, 10]   # Episodes per season.
     watched_through: S02E04         # Marks everything up to this episode watched.
-    rating: 10
+    rating: 5
     episodes:                       # Optional details for any episode.
       S01E01:
         duration: 60
+        rating: 4
         release_date: 2002-06-02
         description: The first episode.
   - name: Breaking Bad
@@ -127,7 +131,7 @@ game:
     multiplayer: true               # Off by default.
     multiplayer_status: planned     # Like status, but it can't be completed.
     hours_played: 42
-    owned: true                     # Games only.
+    ownership: owned                # Games only. wanted or owned, or left out for neither.
     platforms: [Steam]
     watched_on: 2024-08-17          # The day you finished it.
 ```
@@ -146,15 +150,15 @@ Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
 ### Importing again
 
-Importing is safe to repeat. Status, watch dates, progress and `owned` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
+Importing is safe to repeat. Status, watch dates, progress and `ownership` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
 
 A repeat import does these things and nothing else:
 
 - Adds new titles.
-- Adds new platforms, fills in a platform's blank `url` and sets its `image`. A platform that already exists keeps its type, which you can change on its page.
+- Adds new platforms, fills in a platform's blank `url` or `release_year` and sets its `image`. A platform that already exists keeps its type, which you can change on its page.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
-- Fills in a rating, age restriction, duration, hours played, producer, release date, description, notes, genres or platforms that are still blank, for titles and episodes.
-- Turns on `multiplayer`, with its `multiplayer_status`, for a game where neither the app nor an earlier import has set it.
+- Fills in a rating, age restriction, duration, hours played, producer, franchise, release date, description, notes, genres or platforms that are still blank, for titles and episodes.
+- Turns on `multiplayer`, with its `multiplayer_status`, for a game where neither the app nor an earlier import has set it. If that entry also says `singleplayer: false`, singleplayer goes off too, unless the game already has a status for it.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.
 
 To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI.

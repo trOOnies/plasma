@@ -10,6 +10,7 @@ from plasma.models import (
     Details,
     Kind,
     MultiplayerStatus,
+    Ownership,
     PlanInput,
     PlatformInput,
     PlatformKind,
@@ -519,22 +520,25 @@ def test_producer_is_saved_on_every_kind(conn):
     assert library.get_title(conn, second)["producer"] == "Valve"
 
 
-def test_owned_toggle_and_filter(conn):
-    title_id = library.create_title(conn, game("Owned"))
-    library.create_title(conn, game("Not owned"))
-    library.toggle_owned(conn, title_id)
-    assert names(library.list_titles(conn, owned=True)) == ["Owned"]
-    library.toggle_owned(conn, title_id)
-    assert library.list_titles(conn, owned=True) == []
+def test_ownership_and_filter(conn):
+    title_id = library.create_title(conn, game("Mine"))
+    library.create_title(conn, game("Other"))
+    library.set_ownership(conn, title_id, Ownership.WANTED)
+    assert names(library.list_titles(conn, ownership=Ownership.WANTED)) == ["Mine"]
+    assert names(library.list_titles(conn, ownership=Ownership.NONE)) == ["Other"]
+    library.set_ownership(conn, title_id, Ownership.OWNED)
+    assert library.list_titles(conn, ownership=Ownership.WANTED) == []
+    assert names(library.list_titles(conn, ownership=Ownership.OWNED)) == ["Mine"]
 
 
-def test_editing_a_game_keeps_it_owned_and_favorite(conn):
+def test_editing_a_game_keeps_its_ownership_rating_and_favorite(conn):
     title_id = library.create_title(conn, game())
-    library.toggle_owned(conn, title_id)
+    library.set_ownership(conn, title_id, Ownership.OWNED)
+    library.set_rating(conn, title_id, 4)
     library.toggle_favorite(conn, title_id)
     library.update_title(conn, title_id, game(hours_played=5))
     title = library.get_title(conn, title_id)
-    assert (title["owned"], title["favorite"]) == (1, 1)
+    assert (title["ownership"], title["favorite"], title["rating"]) == ("owned", 1, 4)
 
 
 def plan(name: str = "Family", **fields) -> PlanInput:
@@ -670,8 +674,8 @@ def test_search_treats_wildcards_literally(conn):
 
 def test_stats(conn):
     assert library.stats(conn)["movies_watched"] == 0
-    library.create_title(conn, movie("A", status=Status.COMPLETED, rating=8))
-    library.create_title(conn, movie("B", rating=5, status=Status.PLANNED))
+    library.create_title(conn, movie("A", status=Status.COMPLETED, rating=4))
+    library.create_title(conn, movie("B", rating=3, status=Status.PLANNED))
     library.create_title(conn, series("C", seasons=(2,), status=Status.COMPLETED))
     library.create_title(conn, game("E", status=Status.COMPLETED))
     going = library.create_title(conn, series("D", seasons=(2,)))
@@ -680,8 +684,7 @@ def test_stats(conn):
         "movies_watched": 1,
         "series_completed": 1,
         "games_finished": 1,
-        "planned": 1,
-        "average_rating": 6.5,
+        "average_rating": 3.5,
         "episodes_watched": 3,
     }
 
@@ -728,14 +731,12 @@ def test_status_filter_matches_either_game_mode(conn):
         multiplayer=True,
         multiplayer_status=MultiplayerStatus.WATCHING,
     )
-    online_id = library.create_title(conn, online)
+    library.create_title(conn, online)
     library.create_title(conn, game("Idle"))
     names = [t["name"] for t in library.list_titles(conn, status=Status.WATCHING)]
     assert names == ["Online"]
     names = [t["name"] for t in library.list_titles(conn, status=Status.NONE)]
     assert names == ["Idle"]
-    library.set_multiplayer_status(conn, online_id, MultiplayerStatus.PLANNED)
-    assert library.stats(conn)["planned"] == 1
 
 
 def test_genres_and_age_restriction_filter_the_library(conn):
@@ -762,3 +763,75 @@ def test_new_platforms_from_a_title_take_their_kind_from_it(conn):
     title_id = library.create_title(conn, game())
     library.fill_title_platforms(conn, title_id, ["Arcade Box"])
     assert library.title_platforms(conn, title_id)[0]["kind"] == "console"
+
+
+def test_episode_rating_is_kept_by_saving_its_details(conn):
+    title_id = library.create_title(conn, series(seasons=(1,)))
+    library.set_episode_rating(conn, title_id, 1, 1, 4)
+    library.update_episode(conn, title_id, 1, 1, Details(duration=30))
+    assert library.get_episode(conn, title_id, 1, 1)["rating"] == 4
+    library.set_episode_rating(conn, title_id, 1, 1, None)
+    assert library.get_episode(conn, title_id, 1, 1)["rating"] is None
+
+
+def test_database_refuses_a_rating_above_five(conn):
+    title_id = library.create_title(conn, movie())
+    with pytest.raises(sqlite3.IntegrityError):
+        library.set_rating(conn, title_id, 6)
+
+
+def titles_in_order(conn, order):
+    return names(library.list_titles(conn, order=order))
+
+
+def test_game_tab_order(conn):
+    ids = {name: library.create_title(conn, game(name)) for name in "ABCDEFG"}
+    library.set_ownership(conn, ids["A"], Ownership.OWNED)
+    library.set_ownership(conn, ids["F"], Ownership.WANTED)
+    library.set_ownership(conn, ids["G"], Ownership.OWNED)
+    library.set_ownership(conn, ids["C"], Ownership.WANTED)
+    library.toggle_favorite(conn, ids["E"])
+    library.toggle_favorite(conn, ids["B"])
+    library.set_ownership(conn, ids["E"], Ownership.WANTED)
+    assert titles_in_order(conn, library.GAME_TAB_ORDER) == list("EBCFAGD")
+
+
+def test_franchise_runs_in_release_order_across_kinds(conn):
+    undated = library.create_title(conn, movie("Spin-off", franchise="Saga"))
+    second = library.create_title(
+        conn, game("Second", franchise="saga", release_date=date(2015, 5, 19))
+    )
+    first = library.create_title(conn, series("First", franchise="Saga", year=2010))
+    third = library.create_title(conn, movie("Third", franchise="SAGA", year=2015))
+    library.create_title(conn, movie("Elsewhere", year=2012))
+
+    def neighbors(title_id):
+        pair = library.franchise_neighbors(conn, library.get_title(conn, title_id))
+        return tuple(row["id"] if row else None for row in pair)
+
+    assert neighbors(first) == (None, third)
+    assert neighbors(third) == (first, second)
+    assert neighbors(second) == (third, undated)
+    assert neighbors(undated) == (second, None)
+
+
+def test_title_without_a_franchise_has_no_neighbors(conn):
+    title = library.get_title(conn, library.create_title(conn, movie()))
+    assert library.franchise_neighbors(conn, title) == (None, None)
+
+
+def test_franchises_are_listed_once_ignoring_case(conn):
+    library.create_title(conn, movie("A", franchise="Saga"))
+    library.create_title(conn, movie("B", franchise="saga"))
+    library.create_title(conn, game("C", franchise="Other"))
+    library.create_title(conn, movie("D"))
+    assert library.list_franchises(conn) == ["Other", "Saga"]
+
+
+def test_planned_count_includes_multiplayer(conn):
+    library.create_title(conn, movie("A", status=Status.PLANNED))
+    library.create_title(conn, movie("B"))
+    library.create_title(
+        conn, game(multiplayer=True, multiplayer_status=MultiplayerStatus.PLANNED)
+    )
+    assert library.planned_count(conn) == 2

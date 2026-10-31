@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import stars %}
 {% block title %}Season {{ season }} · {{ title.name }} · Plasma{% endblock %}
 {% block content %}
 <nav class="breadcrumbs" aria-label="Breadcrumb">
@@ -35,6 +36,7 @@
         <span class="muted">{% if episode.duration %}{{ episode.duration | duration }}{% endif %}{% if episode.duration and episode.release_date %} · {% endif %}{% if episode.release_date %}{{ episode.release_date | long_date }}{% endif %}</span>
         {% if episode.description %}<p>{{ episode.description }}</p>{% endif %}
       </div>
+      {{ stars(episode.rating, "/titles/%d/episodes/%d/%d/rating" % (title.id, episode.season, episode.number), "Rating for episode %d" % episode.number) }}
     </li>
     {% endfor %}
   </ul>

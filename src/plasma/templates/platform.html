@@ -7,7 +7,7 @@
 </nav>
 {% if platform.image %}<img class="platform-logo" src="/images/platform/{{ platform.image | urlencode }}" alt="">{% endif %}
 <h1>{{ platform.name }}</h1>
-<p class="muted">{{ {"streaming": "Streaming Platform", "console": "Game Console"}[platform.kind] }}</p>
+<p class="muted">{{ {"streaming": "Streaming Platform", "console": "Game Console"}[platform.kind] }}{% if platform.release_year %} · Released in {{ platform.release_year }}{% endif %}</p>
 {% if platform.url %}<p><a href="{{ platform.url }}" rel="noreferrer">{{ platform.url }}</a></p>{% endif %}
 
 {% if titles %}
@@ -34,6 +34,9 @@
       <option value="{{ kind.value }}" {% if form.kind == kind.value %}selected{% endif %}>{{ kind.label }}</option>
       {% endfor %}
     </select>
+  </label>
+  <label>Release year (game consoles only)
+    <input name="release_year" type="number" min="1950" max="2100" value="{{ form.release_year or '' }}">
   </label>
   <label>Website (optional)
     <input name="url" type="url" value="{{ form.url }}">

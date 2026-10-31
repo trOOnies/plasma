@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pin, title_row %}
+{% block title %}{{ planned_plan_name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/plans">Plans</a>
+</nav>
+<h1><span class="planned-mark">{{ pin() }}</span> {{ planned_plan_name }}</h1>
+<p class="muted">This built-in plan holds everything marked Planned, including games planned for multiplayer. Change a title's status to add or remove it.</p>
+
+{% if titles %}
+<ul class="rows">
+  {% for title in titles %}{{ title_row(title) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing planned yet. Open a title and click Planned.</p>
+{% endif %}
+{% endblock %}

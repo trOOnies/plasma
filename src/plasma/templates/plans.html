@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import heart %}
+{% from "_macros.html" import heart, pin %}
 {% block title %}Plans · Plasma{% endblock %}
 {% block content %}
 <h1>Plans</h1>
@@ -11,6 +11,12 @@
     <a href="/plans/favorites">{{ favorites_plan_name }}</a>
     <span class="plan-builtin">built in</span>
     <span class="muted">{{ favorite_count }} title{{ "" if favorite_count == 1 else "s" }}</span>
+  </li>
+  <li>
+    <span class="planned-mark">{{ pin() }}</span>
+    <a href="/plans/planned">{{ planned_plan_name }}</a>
+    <span class="plan-builtin">built in</span>
+    <span class="muted">{{ planned_count }} title{{ "" if planned_count == 1 else "s" }}</span>
   </li>
   {% for plan in plans %}
   <li>

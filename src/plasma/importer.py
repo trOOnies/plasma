@@ -1,13 +1,13 @@
 """Load titles from the YAML files in info/ into the library.
 
-A title's tracking fields (status, watch date, progress, owned) are read the first
+A title's tracking fields (status, watch date, progress, ownership) are read the first
 time it is imported. After that the app owns them, so a re-import cannot undo anything
 done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
-in a rating, age restriction, duration, hours played, producer, release date,
+in a rating, age restriction, duration, hours played, producer, franchise, release date,
 description, notes, genres, platforms or multiplayer setting that are still blank, and
 apply the image, which can only be set from info/. The streaming_service and game_console
-lists add platforms that no title uses yet, fill in any URL that is still blank, and apply
-the image. A platform that already exists keeps its type.
+lists add platforms that no title uses yet, fill in any URL or release year that is still
+blank, and apply the image. A platform that already exists keeps its type.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -23,7 +23,15 @@ from pydantic import ValidationError
 
 from plasma import library
 from plasma.db import connect
-from plasma.models import ImportEntry, Kind, PlatformInput, PlatformKind, describe_errors
+from plasma.models import (
+    ImportEntry,
+    Kind,
+    Ownership,
+    PlatformInput,
+    PlatformKind,
+    Status,
+    describe_errors,
+)
 
 INFO_DIR = Path("info")
 IMAGES_FOLDER = "images"
@@ -190,12 +198,14 @@ def import_entries(
                 library.set_image(conn, title_id, entry.image)
             _fill_episodes(conn, title_id, entry)
             library.fill_title_platforms(conn, title_id, entry.platforms)
-            if entry.owned:
-                library.toggle_owned(conn, title_id)
+            if entry.ownership is not Ownership.NONE:
+                library.set_ownership(conn, title_id, entry.ownership)
             result.added += 1
             continue
         if entry.multiplayer and existing["multiplayer"] is None:
             library.set_multiplayer_status(conn, existing["id"], entry.multiplayer_status)
+            if not entry.singleplayer and existing["status"] == Status.NONE.value:
+                library.turn_off_singleplayer(conn, existing["id"])
         grew = library.extend_seasons(conn, existing["id"], entry.seasons)
         filled = library.fill_blanks(
             conn,
@@ -204,6 +214,7 @@ def import_entries(
             duration=entry.duration,
             hours_played=entry.hours_played,
             producer=entry.producer,
+            franchise=entry.franchise,
             release_date=library.iso_date(entry.release_date),
             description=entry.description,
             notes=entry.notes,

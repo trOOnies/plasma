@@ -8,7 +8,7 @@ from plasma.models import PlatformKind, guess_platform_kind
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 
 MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
         CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
@@ -16,6 +16,10 @@ AGE_RESTRICTION_COLUMN = """TEXT
         CHECK (age_restriction IN ('all', '7+', '13+', '16+', '18+'))"""
 PLATFORM_KIND_COLUMN = """TEXT NOT NULL DEFAULT 'streaming'
         CHECK (kind IN ('streaming', 'console'))"""
+
+RATING_COLUMN = "INTEGER CHECK (rating BETWEEN 1 AND 5)"
+OWNERSHIP_COLUMN = """TEXT NOT NULL DEFAULT 'none'
+        CHECK (ownership IN ('none', 'wanted', 'owned'))"""
 
 TITLES_COLUMNS = f"""
     id INTEGER PRIMARY KEY,
@@ -28,15 +32,16 @@ TITLES_COLUMNS = f"""
     multiplayer INTEGER,
     multiplayer_status {MULTIPLAYER_STATUS_COLUMN},
     age_restriction {AGE_RESTRICTION_COLUMN},
-    rating INTEGER CHECK (rating BETWEEN 1 AND 10),
+    rating {RATING_COLUMN},
     duration INTEGER,
     release_date TEXT,
     hours_played INTEGER,
     producer TEXT NOT NULL DEFAULT '',
+    franchise TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     favorite INTEGER NOT NULL DEFAULT 0,
-    owned INTEGER NOT NULL DEFAULT 0,
+    ownership {OWNERSHIP_COLUMN},
     image TEXT,
     watched_on TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -56,6 +61,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     duration INTEGER,
     release_date TEXT,
     description TEXT NOT NULL DEFAULT '',
+    rating {RATING_COLUMN},
     watched INTEGER NOT NULL DEFAULT 0,
     watched_on TEXT,
     UNIQUE (title_id, season, number)
@@ -66,6 +72,7 @@ CREATE TABLE IF NOT EXISTS platforms (
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     url TEXT NOT NULL DEFAULT '',
     kind {PLATFORM_KIND_COLUMN},
+    release_year INTEGER,
     image TEXT
 );
 
@@ -110,22 +117,25 @@ ADDED_COLUMNS = {
         "multiplayer": "INTEGER",
         "multiplayer_status": MULTIPLAYER_STATUS_COLUMN,
         "age_restriction": AGE_RESTRICTION_COLUMN,
+        "franchise": "TEXT NOT NULL DEFAULT ''",
     },
     "platforms": {
         "kind": PLATFORM_KIND_COLUMN,
+        "release_year": "INTEGER",
         "image": "TEXT",
     },
     "episodes": {
         "duration": "INTEGER",
         "release_date": "TEXT",
         "description": "TEXT NOT NULL DEFAULT ''",
+        "rating": RATING_COLUMN,
     },
 }
 
 COPIED_COLUMNS = (
-    "id, kind, name, year, rating, duration, release_date, hours_played, producer,"
-    " description, notes, favorite, owned, image, watched_on, updated_at,"
-    " singleplayer, multiplayer, multiplayer_status, age_restriction"
+    "id, kind, name, year, duration, release_date, hours_played, producer,"
+    " description, notes, favorite, image, watched_on, updated_at,"
+    " singleplayer, multiplayer, multiplayer_status, age_restriction, franchise"
 )
 
 
@@ -170,12 +180,15 @@ def _rebuild_titles(conn: sqlite3.Connection, version: int) -> None:
 
     Before version 1 every title started as planned, so planned says nothing about
     what the user chose and becomes none. Later versions keep it, as a real choice.
+
+    Before version 7 ratings went up to 10, not 5, and a game was either owned or not.
     """
     status = "CASE status WHEN 'planned' THEN 'none' ELSE status END" if version < 1 else "status"
     conn.execute(f"CREATE TABLE titles_new ({TITLES_COLUMNS})")
     conn.execute(
-        f"INSERT INTO titles_new ({COPIED_COLUMNS}, status)"
-        f" SELECT {COPIED_COLUMNS}, {status} FROM titles"
+        f"INSERT INTO titles_new ({COPIED_COLUMNS}, status, rating, ownership)"
+        f" SELECT {COPIED_COLUMNS}, {status}, (rating + 1) / 2,"
+        " CASE WHEN owned THEN 'owned' ELSE 'none' END FROM titles"
     )
     conn.execute("DROP TABLE titles")
     conn.execute("ALTER TABLE titles_new RENAME TO titles")
@@ -221,7 +234,7 @@ def _upgrade(conn: sqlite3.Connection) -> None:
             if version >= SCHEMA_VERSION:
                 return
             _add_missing_columns(conn)
-            if version < 3:
+            if version < 7:
                 _rebuild_titles(conn, version)
             if version < 5 and _has_table(conn, "title_platforms"):
                 _sort_platforms(conn)

@@ -182,7 +182,7 @@ def test_upgrade_from_version_2_keeps_everything_and_allows_games(db_path):
     assert (show["episodes_total"], show["episodes_watched"]) == (2, 1)
     assert library.episodes_by_season(conn, 2)[1][0]["duration"] == 45
     assert [row["name"] for row in library.title_platforms(conn, 1)] == ["Netflix"]
-    assert (film["producer"], film["owned"]) == ("", 0)
+    assert (film["producer"], film["ownership"]) == ("", "none")
     assert library.list_plans(conn) == []
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
@@ -192,7 +192,7 @@ def test_upgrade_from_version_2_keeps_everything_and_allows_games(db_path):
     conn.close()
 
 
-def test_upgrade_from_version_3_keeps_data_without_a_rebuild(db_path):
+def test_upgrade_from_version_3_keeps_data(db_path):
     conn = connect(db_path)
     with conn:
         conn.execute(
@@ -200,7 +200,6 @@ def test_upgrade_from_version_3_keeps_data_without_a_rebuild(db_path):
             " VALUES ('game', 'Hades', 'planned', 5)"
         )
     conn.execute("ALTER TABLE titles DROP COLUMN producer")
-    conn.execute("ALTER TABLE titles DROP COLUMN owned")
     conn.executescript("DROP TABLE plan_items; DROP TABLE plans;")
     conn.execute("PRAGMA user_version = 3")
     conn.close()
@@ -208,7 +207,7 @@ def test_upgrade_from_version_3_keeps_data_without_a_rebuild(db_path):
     conn = connect(db_path)
     title = library.get_title(conn, 1)
     assert (title["status"], title["hours_played"]) == ("planned", 5)
-    assert (title["producer"], title["owned"]) == ("", 0)
+    assert (title["producer"], title["ownership"]) == ("", "none")
     assert library.list_plans(conn) == []
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     conn.close()
@@ -283,4 +282,36 @@ def test_upgrade_adds_game_modes_and_sorts_platforms(db_path):
     )
     assert library.title_genres(conn, 1) == []
     assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()
+
+
+def test_upgrade_to_stars_and_ownership(db_path):
+    conn = connect(db_path)
+    conn.executescript(
+        """
+        PRAGMA ignore_check_constraints = ON;
+        INSERT INTO titles (id, kind, name, rating) VALUES
+            (1, 'game', 'Ten', 10), (2, 'game', 'Nine', 9), (3, 'movie', 'Eight', 8),
+            (4, 'movie', 'Two', 2), (5, 'movie', 'One', 1), (6, 'movie', 'Unrated', NULL);
+        INSERT INTO episodes (title_id, season, number) VALUES (6, 1, 1);
+        ALTER TABLE titles ADD COLUMN owned INTEGER NOT NULL DEFAULT 0;
+        UPDATE titles SET owned = 1 WHERE id = 1;
+        ALTER TABLE titles DROP COLUMN ownership;
+        ALTER TABLE titles DROP COLUMN franchise;
+        ALTER TABLE episodes DROP COLUMN rating;
+        PRAGMA user_version = 6;
+        PRAGMA ignore_check_constraints = OFF;
+        """
+    )
+    conn.close()
+
+    conn = connect(db_path)
+    ratings = dict(conn.execute("SELECT name, rating FROM titles").fetchall())
+    assert ratings == {"Ten": 5, "Nine": 5, "Eight": 4, "Two": 1, "One": 1, "Unrated": None}
+    owned = conn.execute("SELECT name FROM titles WHERE ownership = 'owned'").fetchall()
+    assert [row["name"] for row in owned] == ["Ten"]
+    assert library.get_title(conn, 6)["episodes_total"] == 1
+    assert library.get_episode(conn, 6, 1, 1)["rating"] is None
+    assert library.get_title(conn, 1)["franchise"] == ""
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     conn.close()

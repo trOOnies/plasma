@@ -22,12 +22,16 @@
   <label>Producer
     <input name="producer" value="{{ form.producer }}" maxlength="200">
   </label>
+  <label>Franchise
+    <input name="franchise" value="{{ form.franchise }}" maxlength="200" list="franchises">
+    <small class="muted">Series, movies and games with the same franchise link to each other in release order.</small>
+  </label>
+  <datalist id="franchises">
+    {% for franchise in franchises %}<option value="{{ franchise }}"></option>{% endfor %}
+  </datalist>
   <div class="field-row">
     <label>Year
       <input name="year" type="number" min="1870" max="2100" value="{{ form.year }}">
-    </label>
-    <label>Rating (1–10)
-      <input name="rating" type="number" min="1" max="10" value="{{ form.rating }}">
     </label>
     <label>Age restriction
       <select name="age_restriction">

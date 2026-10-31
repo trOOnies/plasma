@@ -34,12 +34,15 @@ from plasma.models import (
     FAVORITES_PLAN_NAME,
     GAME_GENRES,
     GENRES,
+    MAX_RATING,
     MAX_SEASONS,
+    PLANNED_PLAN_NAME,
     SCREEN_GENRES,
     AgeRestriction,
     Details,
     Kind,
     MultiplayerStatus,
+    Ownership,
     PlanInput,
     PlatformInput,
     PlatformKind,
@@ -59,9 +62,12 @@ templates.env.globals["multiplayer_picker_statuses"] = [
     s for s in MultiplayerStatus if s is not MultiplayerStatus.NONE
 ]
 templates.env.globals["multiplayer_statuses"] = list(MultiplayerStatus)
+templates.env.globals["ownerships"] = list(Ownership)
+templates.env.globals["ownership_choices"] = [o for o in Ownership if o is not Ownership.NONE]
 templates.env.globals["age_restrictions"] = list(AgeRestriction)
 templates.env.globals["platform_kinds"] = list(PlatformKind)
 templates.env.globals["favorites_plan_name"] = FAVORITES_PLAN_NAME
+templates.env.globals["planned_plan_name"] = PLANNED_PLAN_NAME
 
 router = APIRouter()
 
@@ -79,6 +85,8 @@ def format_duration(minutes: int) -> str:
 
 def episode_tooltip(episode: Mapping) -> str:
     parts = [episode_code(episode)]
+    if episode["rating"]:
+        parts.append(f"★ {episode['rating']}")
     if episode["duration"]:
         parts.append(format_duration(episode["duration"]))
     if episode["watched_on"]:
@@ -208,11 +216,11 @@ def title_form(
     multiplayer_status: str = Form("none"),
     age_restriction: str = Form(""),
     genres: list[str] = Form([]),
-    rating: str = Form(""),
     duration: str = Form(""),
     release_date: str = Form(""),
     hours_played: str = Form(""),
     producer: str = Form(""),
+    franchise: str = Form(""),
     description: str = Form(""),
     notes: str = Form(""),
     watched_on: str = Form(""),
@@ -226,11 +234,11 @@ def title_form(
         "multiplayer_status": multiplayer_status,
         "age_restriction": age_restriction,
         "genres": genres,
-        "rating": rating,
         "duration": duration,
         "release_date": release_date,
         "hours_played": hours_played,
         "producer": producer,
+        "franchise": franchise,
         "description": description,
         "notes": notes,
         "watched_on": watched_on,
@@ -241,6 +249,9 @@ TitleForm = Annotated[dict[str, Any], Depends(title_form)]
 # A library filter's "Any" option submits an empty value.
 StatusFilter = Annotated[Status | None, BeforeValidator(lambda value: value or None)]
 AgeFilter = Annotated[AgeRestriction | None, BeforeValidator(lambda value: value or None)]
+OwnershipFilter = Annotated[Ownership | None, BeforeValidator(lambda value: value or None)]
+# Clicking the current star submits 0, which clears the rating.
+StarRating = Annotated[int, Form(ge=0, le=MAX_RATING)]
 
 
 def parse_form(form: dict[str, Any]) -> TitleInput:
@@ -275,6 +286,7 @@ def render_form(
         "title_id": title_id,
         "platforms": library.list_platforms(conn),
         "platform_ids": platform_ids,
+        "franchises": library.list_franchises(conn),
         "genre_options": GAME_GENRES if form["kind"] == "game" else SCREEN_GENRES,
     }
     return templates.TemplateResponse(request, "form.html", context, status_code=status_code)
@@ -307,21 +319,29 @@ def titles(
     status: StatusFilter = None,
     q: str = "",
     favorite: bool = False,
-    owned: bool = False,
+    ownership: OwnershipFilter = None,
     genre: str = "",
     age: AgeFilter = None,
+    franchise: str = "",
     page: int = 1,
 ) -> Response:
+    if franchise:
+        order = library.FRANCHISE_ORDER
+    elif kind is Kind.GAME:
+        order = library.GAME_TAB_ORDER
+    else:
+        order = library.TAB_ORDER
     matches = library.list_titles(
         conn,
         kind,
         status,
         q.strip(),
-        order="t.favorite DESC, t.name COLLATE NOCASE",
+        order=order,
         favorite=favorite,
-        owned=owned,
+        ownership=ownership,
         genre=genre,
         age_restriction=age,
+        franchise=franchise,
     )
     shown, pages = paginate(request, matches, page)
     context = {
@@ -331,9 +351,10 @@ def titles(
         "status": status,
         "q": q,
         "favorite": favorite,
-        "owned": owned,
+        "ownership": ownership,
         "genre": genre,
         "age": age,
+        "franchise": franchise,
         "genre_options": GENRES[kind] if kind else sorted({*SCREEN_GENRES, *GAME_GENRES}),
     }
     return templates.TemplateResponse(request, "library.html", context)
@@ -383,8 +404,11 @@ def create_title(
 @router.get("/titles/{title_id}", response_class=HTMLResponse)
 def title_detail(request: Request, conn: Conn, title_id: int) -> Response:
     title = require_title(conn, title_id)
+    earlier, later = library.franchise_neighbors(conn, title)
     context = {
         "title": title,
+        "earlier": earlier,
+        "later": later,
         "locked_statuses": library.locked_statuses(title),
         "seasons": library.episodes_by_season(conn, title_id),
         "next_episode": library.next_episode(conn, title_id),
@@ -402,11 +426,11 @@ FORM_COLUMNS = (
     "status",
     "multiplayer_status",
     "age_restriction",
-    "rating",
     "duration",
     "release_date",
     "hours_played",
     "producer",
+    "franchise",
     "description",
     "notes",
     "watched_on",
@@ -488,13 +512,21 @@ def toggle_favorite(conn: Conn, title_id: int) -> Response:
     return redirect(f"/titles/{title_id}")
 
 
-@router.post("/titles/{title_id}/owned")
-def toggle_owned(conn: Conn, title_id: int) -> Response:
+@router.post("/titles/{title_id}/ownership")
+def set_ownership(conn: Conn, title_id: int, ownership: Ownership = Form(...)) -> Response:
     title = require_title(conn, title_id)
     if title["kind"] != Kind.GAME.value:
         raise HTTPException(status_code=404)
     with conn:
-        library.toggle_owned(conn, title_id)
+        library.set_ownership(conn, title_id, ownership)
+    return redirect(f"/titles/{title_id}")
+
+
+@router.post("/titles/{title_id}/rating")
+def set_rating(conn: Conn, title_id: int, rating: StarRating) -> Response:
+    require_title(conn, title_id)
+    with conn:
+        library.set_rating(conn, title_id, rating or None)
     return redirect(f"/titles/{title_id}")
 
 
@@ -532,6 +564,23 @@ def toggle_episode(
     if back == "season":
         return redirect(f"/titles/{title_id}/seasons/{season}")
     return redirect(f"/titles/{title_id}#season-{season}")
+
+
+@router.post("/titles/{title_id}/episodes/{season}/{number}/rating")
+def set_episode_rating(
+    conn: Conn,
+    title_id: int,
+    season: int,
+    number: int,
+    rating: StarRating,
+    back: str = Form(""),
+) -> Response:
+    require_episode(conn, title_id, season, number)
+    with conn:
+        library.set_episode_rating(conn, title_id, season, number, rating or None)
+    if back == "season":
+        return redirect(f"/titles/{title_id}/seasons/{season}")
+    return redirect(f"/titles/{title_id}/episodes/{season}/{number}")
 
 
 @router.get("/titles/{title_id}/episodes/{season}/{number}", response_class=HTMLResponse)
@@ -758,6 +807,12 @@ def mark_season(
     return redirect(f"/titles/{title_id}#season-{season}")
 
 
+def parse_platform(form: dict[str, str]) -> PlatformInput:
+    """Read the platform forms, where a year left over from a console type doesn't count."""
+    is_console = form["kind"] == PlatformKind.CONSOLE.value
+    return PlatformInput(**{**form, "release_year": form["release_year"] if is_console else ""})
+
+
 def render_platforms(
     request: Request,
     conn: sqlite3.Connection,
@@ -804,11 +859,12 @@ def create_platform(
     name: str = Form(""),
     url: str = Form(""),
     kind: str = Form(PlatformKind.STREAMING.value),
+    release_year: str = Form(""),
 ) -> Response:
-    form = {"name": name, "url": url, "kind": kind}
+    form = {"name": name, "url": url, "kind": kind, "release_year": release_year}
     try:
         with conn:
-            platform_id = library.create_platform(conn, PlatformInput(**form))
+            platform_id = library.create_platform(conn, parse_platform(form))
     except ValidationError as error:
         return render_platforms(request, conn, form, describe_errors(error), 422)
     except library.DuplicatePlatformError:
@@ -829,12 +885,13 @@ def update_platform(
     name: str = Form(""),
     url: str = Form(""),
     kind: str = Form(PlatformKind.STREAMING.value),
+    release_year: str = Form(""),
 ) -> Response:
     platform = require_platform(conn, platform_id)
-    form = {"name": name, "url": url, "kind": kind}
+    form = {"name": name, "url": url, "kind": kind, "release_year": release_year}
     try:
         with conn:
-            library.update_platform(conn, platform_id, PlatformInput(**form))
+            library.update_platform(conn, platform_id, parse_platform(form))
     except ValidationError as error:
         return render_platform(request, conn, platform, form, describe_errors(error), 422)
     except library.DuplicatePlatformError:
@@ -861,6 +918,7 @@ def render_plans(
     context = {
         "plans": library.list_plans(conn),
         "favorite_count": library.favorite_count(conn),
+        "planned_count": library.planned_count(conn),
         "form": form or {},
         "errors": errors or [],
     }
@@ -909,6 +967,12 @@ def create_plan(
 def favorites_plan(request: Request, conn: Conn) -> Response:
     context = {"titles": library.list_titles(conn, favorite=True)}
     return templates.TemplateResponse(request, "plan_favorites.html", context)
+
+
+@router.get("/plans/planned", response_class=HTMLResponse)
+def planned_plan(request: Request, conn: Conn) -> Response:
+    context = {"titles": library.list_titles(conn, status=Status.PLANNED)}
+    return templates.TemplateResponse(request, "plan_planned.html", context)
 
 
 @router.get("/plans/{plan_id}", response_class=HTMLResponse)

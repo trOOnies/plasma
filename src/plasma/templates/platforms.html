@@ -12,7 +12,7 @@
   <li>
     {% if platform.image %}<img class="platform-icon" src="/images/platform/{{ platform.image | urlencode }}" alt="">{% endif %}
     <a href="/platforms/{{ platform.id }}">{{ platform.name }}</a>
-    <span class="muted">{{ platform.title_count }} title{{ "" if platform.title_count == 1 else "s" }}</span>
+    <span class="muted">{% if platform.release_year %}{{ platform.release_year }} · {% endif %}{{ platform.title_count }} title{{ "" if platform.title_count == 1 else "s" }}</span>
   </li>
   {% endfor %}
 </ul>
@@ -37,6 +37,9 @@
       <option value="{{ kind.value }}" {% if form.kind == kind.value %}selected{% endif %}>{{ kind.label }}</option>
       {% endfor %}
     </select>
+  </label>
+  <label>Release year (game consoles only)
+    <input name="release_year" type="number" min="1950" max="2100" value="{{ form.release_year or '' }}">
   </label>
   <label>Website (optional)
     <input name="url" type="url" value="{{ form.url }}" placeholder="https://www.netflix.com">

@@ -2,10 +2,11 @@
 {% from "_macros.html" import pagination, status_label, title_row %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
-<h1>{% if kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
+<h1>{% if franchise %}{{ franchise }}{% elif kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
 
 <form class="filters" method="get" action="/titles">
   {% if kind %}<input type="hidden" name="kind" value="{{ kind.value }}">{% endif %}
+  {% if franchise %}<input type="hidden" name="franchise" value="{{ franchise }}">{% endif %}
   <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
   <select name="status" aria-label="Status">
     <option value="">Any status</option>
@@ -27,7 +28,12 @@
   </select>
   <label class="check"><input type="checkbox" name="favorite" value="true" {% if favorite %}checked{% endif %}> Favorites</label>
   {% if kind and kind.value == "game" %}
-  <label class="check"><input type="checkbox" name="owned" value="true" {% if owned %}checked{% endif %}> Owned</label>
+  <select name="ownership" aria-label="Collection">
+    <option value="">Any collection</option>
+    {% for option in ownerships %}
+    <option value="{{ option.value }}" {% if ownership == option %}selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
   {% endif %}
   <button>Filter</button>
 </form>

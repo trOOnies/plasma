@@ -234,11 +234,13 @@ h1 .kind-icon svg { width: 22px; height: 22px; }
 
 .plan-picker { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-picker button { padding: 4px 12px; border-radius: 999px; font-size: 0.9rem; }
-.plan-picker [aria-pressed="true"], .owned-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.plan-picker [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
 .add-to-plan { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .add-to-plan select { flex: 1 1 240px; width: auto; }
 
+.planned-mark { color: var(--planned); line-height: 0; }
+.planned-mark svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .plan-builtin { color: var(--favorite); font-size: 0.85rem; }
 
 .platform-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
@@ -411,10 +413,21 @@ button.favorite:hover { border-color: var(--favorite); }
 .status-picker button:disabled { opacity: 0.45; cursor: not-allowed; }
 .status-picker button:disabled:hover { border-color: var(--border); }
 .status-picker [aria-pressed="true"] { border-color: currentColor; font-weight: 600; }
+.ownership-picker [aria-pressed="true"] { color: var(--accent); }
 .status-picker [aria-pressed="true"].status-planned { color: var(--planned); }
 .status-picker [aria-pressed="true"].status-watching { color: var(--watching); }
 .status-picker [aria-pressed="true"].status-completed { color: var(--completed); }
 .status-picker [aria-pressed="true"].status-dropped { color: var(--dropped); }
+
+.stars { display: inline-flex; flex: none; margin: 4px 0; }
+button.star { width: 30px; height: 30px; padding: 3px; background: none; border-color: transparent; color: var(--favorite); line-height: 0; }
+button.star svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+button.star.filled svg { fill: currentColor; }
+.stars:hover button.star svg { fill: currentColor; }
+.stars button.star:hover ~ button.star svg { fill: none; }
+.episode-rows .stars { margin: 0 0 0 auto; }
+.franchise-pager { margin: 8px 0; }
+.franchise-pager .kind-icon { vertical-align: -0.2em; }
 
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0; }
 .meta:empty { display: none; }

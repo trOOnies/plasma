@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from plasma import importer, library, seed
-from plasma.models import Details, Kind, TitleInput
+from plasma.models import Details, Kind, Ownership, TitleInput
 
 
 def write(directory: Path, text: str, name: str = "library.yaml") -> Path:
@@ -18,7 +18,7 @@ movie:
     year: 2019
     status: completed
     watched_on: 2024-03-02
-    rating: 8
+    rating: 4
 series:
   - name: Show
     year: 2020
@@ -89,10 +89,10 @@ def test_reimport_never_removes_episodes(conn, tmp_path):
 
 def test_reimport_fills_blank_rating_and_notes(conn, tmp_path):
     importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n")])
-    rated = write(tmp_path, "movie:\n  - name: Film\n    rating: 7\n    notes: Nice\n", "b.yaml")
+    rated = write(tmp_path, "movie:\n  - name: Film\n    rating: 3\n    notes: Nice\n", "b.yaml")
     assert importer.import_paths(conn, [rated]).updated == 1
     film = library.find_title(conn, Kind.MOVIE, "Film", None)
-    assert (film["rating"], film["notes"]) == (7, "Nice")
+    assert (film["rating"], film["notes"]) == (3, "Nice")
 
 
 def test_reimport_fills_a_blank_description_but_keeps_an_existing_one(conn, tmp_path):
@@ -256,7 +256,7 @@ def test_game_with_seasons_is_reported(conn, tmp_path):
         importer.import_paths(conn, [path])
 
 
-def test_producer_and_owned_are_imported(conn, tmp_path):
+def test_producer_and_ownership_are_imported(conn, tmp_path):
     text = """
 movie:
   - name: Film
@@ -264,32 +264,32 @@ movie:
 game:
   - name: Hades
     producer: Supergiant Games
-    owned: true
+    ownership: wanted
   - name: Celeste
 """
     importer.import_paths(conn, [write(tmp_path, text)])
     assert library.find_title(conn, Kind.MOVIE, "Film", None)["producer"] == "A24"
     hades = library.find_title(conn, Kind.GAME, "Hades", None)
-    assert (hades["producer"], hades["owned"]) == ("Supergiant Games", 1)
-    assert library.find_title(conn, Kind.GAME, "Celeste", None)["owned"] == 0
+    assert (hades["producer"], hades["ownership"]) == ("Supergiant Games", "wanted")
+    assert library.find_title(conn, Kind.GAME, "Celeste", None)["ownership"] == "none"
 
 
-def test_reimport_fills_a_blank_producer_but_keeps_owned_changes(conn, tmp_path):
-    text = "game:\n  - name: Hades\n    owned: true\n"
+def test_reimport_fills_a_blank_producer_but_keeps_ownership_changes(conn, tmp_path):
+    text = "game:\n  - name: Hades\n    ownership: wanted\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     hades = library.find_title(conn, Kind.GAME, "Hades", None)
-    library.toggle_owned(conn, hades["id"])
+    library.set_ownership(conn, hades["id"], Ownership.OWNED)
 
     text += "    producer: Supergiant Games\n"
     assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
 
     hades = library.find_title(conn, Kind.GAME, "Hades", None)
-    assert (hades["producer"], hades["owned"]) == ("Supergiant Games", 0)
+    assert (hades["producer"], hades["ownership"]) == ("Supergiant Games", "owned")
 
 
-def test_owned_on_a_movie_is_reported(conn, tmp_path):
-    path = write(tmp_path, "movie:\n  - name: Film\n    owned: true\n")
-    with pytest.raises(importer.ImportFileError, match="owned only applies to games"):
+def test_ownership_on_a_movie_is_reported(conn, tmp_path):
+    path = write(tmp_path, "movie:\n  - name: Film\n    ownership: owned\n")
+    with pytest.raises(importer.ImportFileError, match="ownership only applies to games"):
         importer.import_paths(conn, [path])
 
 
@@ -601,3 +601,73 @@ def test_reimport_replaces_a_platform_image(conn, tmp_path):
     text = "streaming_service:\n  - name: Netflix\n    image: n.png\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     assert library.list_platforms(conn)[0]["image"] == "n.png"
+
+
+def test_import_reads_franchise_and_episode_rating(conn, tmp_path):
+    text = """
+series:
+  - name: Show
+    franchise: Saga
+    seasons: [2]
+    episodes:
+      S01E02:
+        rating: 4
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    title = library.list_titles(conn)[0]
+    assert title["franchise"] == "Saga"
+    assert library.get_episode(conn, title["id"], 1, 2)["rating"] == 4
+
+
+def test_reimport_fills_a_blank_franchise_and_episode_rating(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "series:\n  - name: Show\n    seasons: [1]\n")])
+    text = """
+series:
+  - name: Show
+    seasons: [1]
+    franchise: Saga
+    episodes:
+      S01E01:
+        rating: 2
+"""
+    assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
+    title = library.list_titles(conn)[0]
+    assert title["franchise"] == "Saga"
+    assert library.get_episode(conn, title["id"], 1, 1)["rating"] == 2
+
+
+def test_old_ten_point_rating_is_reported(conn, tmp_path):
+    path = write(tmp_path, "movie:\n  - name: Film\n    rating: 9\n")
+    with pytest.raises(importer.ImportFileError, match="rating"):
+        importer.import_paths(conn, [path])
+
+
+def test_console_release_year_is_imported_and_fills_a_blank(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "game_console:\n  - name: Wii\n")])
+    assert library.list_platforms(conn)[0]["release_year"] is None
+    text = "game_console:\n  - name: Wii\n    release_year: 2006\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.list_platforms(conn)[0]["release_year"] == 2006
+
+
+def test_release_year_on_a_streaming_service_is_reported(conn, tmp_path):
+    text = "streaming_service:\n  - name: Netflix\n    release_year: 2007\n"
+    with pytest.raises(importer.ImportFileError, match="game consoles"):
+        importer.import_paths(conn, [write(tmp_path, text)])
+
+
+def test_reimport_can_make_an_existing_game_multiplayer_only(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "game:\n  - name: Online\n")])
+    text = "game:\n  - name: Online\n    singleplayer: false\n    multiplayer: true\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    title = library.list_titles(conn)[0]
+    assert (title["singleplayer"], title["multiplayer"]) == (0, 1)
+
+
+def test_reimport_keeps_singleplayer_that_has_a_status(conn, tmp_path):
+    first = "game:\n  - name: Online\n    status: completed\n"
+    importer.import_paths(conn, [write(tmp_path, first)])
+    text = "game:\n  - name: Online\n    singleplayer: false\n    multiplayer: true\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    title = library.list_titles(conn)[0]
+    assert (title["singleplayer"], title["multiplayer"]) == (1, 1)

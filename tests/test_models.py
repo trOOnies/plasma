@@ -45,7 +45,7 @@ def test_seasons_rejected(value):
         TitleInput(kind=Kind.SERIES, name="Show", seasons=value)
 
 
-@pytest.mark.parametrize("rating", [0, 11])
+@pytest.mark.parametrize("rating", [0, 6])
 def test_rating_range(rating):
     with pytest.raises(ValidationError):
         TitleInput(kind="movie", name="Film", rating=rating)
@@ -141,9 +141,14 @@ def test_blank_producer_from_yaml():
 
 
 @pytest.mark.parametrize("kind", ["movie", "series"])
-def test_owned_only_applies_to_games(kind):
-    with pytest.raises(ValidationError, match="owned only applies to games"):
-        ImportEntry(kind=kind, name="Title", owned=True)
+def test_ownership_only_applies_to_games(kind):
+    with pytest.raises(ValidationError, match="ownership only applies to games"):
+        ImportEntry(kind=kind, name="Title", ownership="owned")
+
+
+def test_anime_is_a_genre_for_series_and_movies():
+    assert TitleInput(kind="series", name="Show", genres=["anime"]).genres == ["Anime"]
+    assert TitleInput(kind="movie", name="Film", genres=["Anime"]).genres == ["Anime"]
 
 
 def test_plan_needs_a_name():
@@ -290,3 +295,18 @@ def test_platform_kind_can_be_stated():
     assert PlatformInput(name="Xbox Cloud", kind="console").kind.value == "console"
     with pytest.raises(ValidationError):
         PlatformInput(name="Netflix", kind="vhs")
+
+
+@pytest.mark.parametrize("name", ["Planned", "planned", " PLANNED "])
+def test_planned_is_a_reserved_plan_name(name):
+    with pytest.raises(ValidationError, match="reserved"):
+        PlanInput(name=name)
+
+
+def test_release_year_only_applies_to_consoles():
+    assert PlatformInput(name="Wii", kind="console", release_year="2006").release_year == 2006
+    assert PlatformInput(name="Wii", kind="console", release_year="").release_year is None
+    with pytest.raises(ValidationError, match="only applies to game consoles"):
+        PlatformInput(name="Netflix", kind="streaming", release_year=2007)
+    with pytest.raises(ValidationError):
+        PlatformInput(name="Wii", kind="console", release_year=1800)

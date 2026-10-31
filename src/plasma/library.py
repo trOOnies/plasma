@@ -23,6 +23,7 @@ from plasma.models import (
     Details,
     Kind,
     MultiplayerStatus,
+    Ownership,
     PlanInput,
     PlatformInput,
     PlatformKind,
@@ -37,6 +38,16 @@ TITLE_SELECT = """
 UP_TO_EPISODE = "(season < ? OR (season = ? AND number <= ?))"
 AFTER_EPISODE = "(season > ? OR (season = ? AND number > ?))"
 BEFORE_EPISODE = "(season < ? OR (season = ? AND number < ?))"
+
+TAB_ORDER = "t.favorite DESC, t.name COLLATE NOCASE"
+GAME_TAB_ORDER = (
+    "t.favorite DESC,"
+    " CASE t.ownership WHEN 'wanted' THEN 0 WHEN 'owned' THEN 1 ELSE 2 END,"
+    " t.name COLLATE NOCASE"
+)
+# A release date or year, so a title that has neither comes last.
+RELEASED = "COALESCE(t.release_date, CAST(t.year AS TEXT))"
+FRANCHISE_ORDER = f"{RELEASED} IS NULL, {RELEASED}, t.name COLLATE NOCASE"
 
 UPCOMING_DAYS = 90
 JUST_RELEASED_DAYS = 30
@@ -99,9 +110,10 @@ def list_titles(
     order: str = "t.name COLLATE NOCASE",
     favorite: bool = False,
     platform_id: int | None = None,
-    owned: bool = False,
+    ownership: Ownership | None = None,
     genre: str = "",
     age_restriction: AgeRestriction | None = None,
+    franchise: str = "",
 ) -> list[sqlite3.Row]:
     clauses, params = [], []
     if kind:
@@ -114,8 +126,12 @@ def list_titles(
         params.extend([status.value, status.value])
     if favorite:
         clauses.append("t.favorite = 1")
-    if owned:
-        clauses.append("t.owned = 1")
+    if ownership:
+        clauses.append("t.ownership = ?")
+        params.append(ownership.value)
+    if franchise:
+        clauses.append("t.franchise = ? COLLATE NOCASE")
+        params.append(franchise)
     if platform_id:
         clauses.append("t.id IN (SELECT title_id FROM title_platforms WHERE platform_id = ?)")
         params.append(platform_id)
@@ -139,8 +155,8 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
             "INSERT INTO titles"
             " (kind, name, year, status, singleplayer, multiplayer, multiplayer_status,"
             " age_restriction, rating, duration, release_date, hours_played,"
-            " producer, description, notes, watched_on)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " producer, franchise, description, notes, watched_on)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 data.kind.value,
                 data.name,
@@ -155,6 +171,7 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
                 iso_date(data.release_date),
                 data.hours_played,
                 data.producer,
+                data.franchise,
                 data.description,
                 data.notes,
                 iso_date(data.watched_on),
@@ -176,8 +193,8 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
         conn.execute(
             "UPDATE titles SET name = ?, year = ?, status = ?, singleplayer = ?,"
             " multiplayer = ?, multiplayer_status = ?, age_restriction = ?,"
-            " rating = ?, duration = ?,"
-            " release_date = ?, hours_played = ?, producer = ?, description = ?, notes = ?,"
+            " duration = ?, release_date = ?, hours_played = ?, producer = ?,"
+            " franchise = ?, description = ?, notes = ?,"
             " watched_on = ?,"
             " updated_at = datetime('now')"
             " WHERE id = ?",
@@ -189,11 +206,11 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
                 data.multiplayer,
                 data.multiplayer_status.value,
                 _age_value(data.age_restriction),
-                data.rating,
                 data.duration,
                 iso_date(data.release_date),
                 data.hours_played,
                 data.producer,
+                data.franchise,
                 data.description,
                 data.notes,
                 iso_date(data.watched_on),
@@ -275,8 +292,46 @@ def toggle_favorite(conn: sqlite3.Connection, title_id: int) -> None:
     conn.execute("UPDATE titles SET favorite = NOT favorite WHERE id = ?", (title_id,))
 
 
-def toggle_owned(conn: sqlite3.Connection, title_id: int) -> None:
-    conn.execute("UPDATE titles SET owned = NOT owned WHERE id = ?", (title_id,))
+def turn_off_singleplayer(conn: sqlite3.Connection, title_id: int) -> None:
+    conn.execute("UPDATE titles SET singleplayer = 0 WHERE id = ?", (title_id,))
+
+
+def set_ownership(conn: sqlite3.Connection, title_id: int, ownership: Ownership) -> None:
+    conn.execute("UPDATE titles SET ownership = ? WHERE id = ?", (ownership.value, title_id))
+
+
+def set_rating(conn: sqlite3.Connection, title_id: int, rating: int | None) -> None:
+    conn.execute("UPDATE titles SET rating = ? WHERE id = ?", (rating, title_id))
+
+
+def set_episode_rating(
+    conn: sqlite3.Connection, title_id: int, season: int, number: int, rating: int | None
+) -> None:
+    conn.execute(
+        "UPDATE episodes SET rating = ? WHERE title_id = ? AND season = ? AND number = ?",
+        (rating, title_id, season, number),
+    )
+
+
+def list_franchises(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        "SELECT MIN(franchise) AS name FROM titles WHERE franchise != ''"
+        " GROUP BY franchise COLLATE NOCASE ORDER BY name COLLATE NOCASE"
+    )
+    return [row["name"] for row in rows]
+
+
+def franchise_neighbors(
+    conn: sqlite3.Connection, title: sqlite3.Row
+) -> tuple[sqlite3.Row | None, sqlite3.Row | None]:
+    """The franchise's titles released just before and just after this one."""
+    if not title["franchise"]:
+        return None, None
+    titles = list_titles(conn, franchise=title["franchise"], order=FRANCHISE_ORDER)
+    index = [row["id"] for row in titles].index(title["id"])
+    earlier = titles[index - 1] if index > 0 else None
+    later = titles[index + 1] if index + 1 < len(titles) else None
+    return earlier, later
 
 
 def season_counts(conn: sqlite3.Connection, title_id: int) -> list[int]:
@@ -402,6 +457,7 @@ def fill_episode_blanks(
         "duration": data.duration,
         "release_date": iso_date(data.release_date),
         "description": data.description,
+        "rating": data.rating,
     }
     return _fill_blanks(conn, "episodes", get_episode(conn, title_id, season, number), values)
 
@@ -559,20 +615,25 @@ def get_platform(conn: sqlite3.Connection, platform_id: int) -> sqlite3.Row | No
 def create_platform(conn: sqlite3.Connection, data: PlatformInput) -> int:
     try:
         return conn.execute(
-            "INSERT INTO platforms (name, url, kind) VALUES (?, ?, ?)",
-            (data.name, data.url, data.kind.value),
+            "INSERT INTO platforms (name, url, kind, release_year) VALUES (?, ?, ?, ?)",
+            (data.name, data.url, data.kind.value, data.release_year),
         ).lastrowid
     except sqlite3.IntegrityError as error:
         raise DuplicatePlatformError(data.name) from error
 
 
 def fill_platform(conn: sqlite3.Connection, data: PlatformInput) -> bool:
-    """Add a platform, or fill in a blank URL and apply its image. Returns whether it's new."""
+    """Add a platform, or fill in its blanks and apply its image. Returns whether it's new."""
     added = conn.execute(
-        "INSERT OR IGNORE INTO platforms (name, url, kind, image) VALUES (?, ?, ?, ?)",
-        (data.name, data.url, data.kind.value, data.image),
+        "INSERT OR IGNORE INTO platforms (name, url, kind, release_year, image)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (data.name, data.url, data.kind.value, data.release_year, data.image),
     ).rowcount
     conn.execute("UPDATE platforms SET url = ? WHERE name = ? AND url = ''", (data.url, data.name))
+    conn.execute(
+        "UPDATE platforms SET release_year = ? WHERE name = ? AND release_year IS NULL",
+        (data.release_year, data.name),
+    )
     if data.image:
         conn.execute("UPDATE platforms SET image = ? WHERE name = ?", (data.image, data.name))
     return added > 0
@@ -581,8 +642,8 @@ def fill_platform(conn: sqlite3.Connection, data: PlatformInput) -> bool:
 def update_platform(conn: sqlite3.Connection, platform_id: int, data: PlatformInput) -> None:
     try:
         conn.execute(
-            "UPDATE platforms SET name = ?, url = ?, kind = ? WHERE id = ?",
-            (data.name, data.url, data.kind.value, platform_id),
+            "UPDATE platforms SET name = ?, url = ?, kind = ?, release_year = ? WHERE id = ?",
+            (data.name, data.url, data.kind.value, data.release_year, platform_id),
         )
     except sqlite3.IntegrityError as error:
         raise DuplicatePlatformError(data.name) from error
@@ -702,6 +763,10 @@ def plans_for_title(conn: sqlite3.Connection, title_id: int) -> list[sqlite3.Row
     ).fetchall()
 
 
+def planned_count(conn: sqlite3.Connection) -> int:
+    return len(list_titles(conn, status=Status.PLANNED))
+
+
 def favorite_count(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM titles WHERE favorite = 1").fetchone()[0]
 
@@ -713,7 +778,6 @@ def stats(conn: sqlite3.Connection) -> dict[str, int | float | None]:
             COALESCE(SUM(kind = 'movie' AND status = 'completed'), 0) AS movies_watched,
             COALESCE(SUM(kind = 'series' AND status = 'completed'), 0) AS series_completed,
             COALESCE(SUM(kind = 'game' AND status = 'completed'), 0) AS games_finished,
-            COALESCE(SUM(status = 'planned' OR multiplayer_status = 'planned'), 0) AS planned,
             ROUND(AVG(rating), 1) AS average_rating,
             (SELECT COUNT(*) FROM episodes WHERE watched = 1) AS episodes_watched
         FROM titles

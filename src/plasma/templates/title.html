@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import age_label, heart, kind_icon, pencil, progress, status_picker %}
+{% from "_macros.html" import age_label, heart, kind_icon, pencil, progress, stars, status_picker %}
 {% block title %}{{ title.name }} · Plasma{% endblock %}
 {% block content %}
 <div class="title-layout{% if title.image %} has-poster{% endif %}">
@@ -23,11 +23,6 @@
           <button class="primary">Watched {{ next_episode | episode_code }}</button>
         </form>
         {% endif %}
-        {% if title.kind == "game" %}
-        <form method="post" action="/titles/{{ title.id }}/owned">
-          <button class="owned-toggle" aria-pressed="{{ 'true' if title.owned else 'false' }}">{{ "✓ Owned" if title.owned else "Mark as owned" }}</button>
-        </form>
-        {% endif %}
         <a class="button" href="/titles/{{ title.id }}/edit">Edit</a>
       </div>
     </div>
@@ -39,8 +34,21 @@
     {{ status_picker("/titles/%d/multiplayer-status" % title.id, multiplayer_picker_statuses, title.multiplayer_status, title.kind, "Multiplayer") }}
     {% endif %}
 
+    {% if title.kind == "game" %}
+    <div class="status-row">
+      <span class="status-mode">Collection</span>
+      <form class="status-picker ownership-picker" method="post" action="/titles/{{ title.id }}/ownership" aria-label="Collection">
+        {% for option in ownership_choices %}
+        {% set active = title.ownership == option.value %}
+        <button name="ownership" value="{{ 'none' if active else option.value }}" aria-pressed="{{ 'true' if active else 'false' }}"{% if active %} title="Click to clear"{% endif %}>{{ option.label }}</button>
+        {% endfor %}
+      </form>
+    </div>
+    {% endif %}
+
+    <form method="post">{{ stars(title.rating, "/titles/%d/rating" % title.id) }}</form>
+
     <p class="meta">
-      {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
       {% if title.age_restriction %}<a class="age-chip" href="/titles?kind={{ title.kind }}&amp;age={{ title.age_restriction | urlencode }}">{{ age_label(title.age_restriction) }}</a>{% endif %}
       {% if title.producer %}<span class="muted">Producer: {{ title.producer }}</span>{% endif %}
       {% if title.duration %}<span class="muted">{{ title.duration | duration }}</span>{% endif %}
@@ -59,6 +67,16 @@
     <p class="platform-list">
       {% for platform in platforms %}<a class="platform-chip" href="/platforms/{{ platform.id }}">{{ platform.name }}</a>{% endfor %}
     </p>
+    {% endif %}
+
+    {% if title.franchise %}
+    <p class="meta"><span class="muted">Franchise:</span> <a class="platform-chip" href="/titles?franchise={{ title.franchise | urlencode }}">{{ title.franchise }}</a></p>
+    {% if earlier or later %}
+    <div class="pager franchise-pager">
+      {% if earlier %}<a href="/titles/{{ earlier.id }}">← {{ kind_icon(earlier.kind) }} {{ earlier.name }}</a>{% else %}<span></span>{% endif %}
+      {% if later %}<a href="/titles/{{ later.id }}">{{ kind_icon(later.kind) }} {{ later.name }} →</a>{% endif %}
+    </div>
+    {% endif %}
     {% endif %}
 
     {% if title.description %}<p class="description">{{ title.description }}</p>{% endif %}

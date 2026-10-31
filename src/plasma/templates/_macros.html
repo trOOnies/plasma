@@ -8,6 +8,8 @@
 
 {% macro heart() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-8.5-5.2-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 2.7c0 6-8.5 11.2-8.5 11.2z"/></svg>{% endmacro %}
 
+{% macro pin() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></svg>{% endmacro %}
+
 {% macro pencil() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 8l3 3"/></svg>{% endmacro %}
 
 {% macro kind_icon(kind) %}{% set label = {"movie": "Movie", "series": "Series", "game": "Game"}[kind] %}<span class="kind-icon" role="img" aria-label="{{ label }}" title="{{ label }}"><svg viewBox="0 0 24 24" aria-hidden="true">{% if kind == "movie" %}<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M16 4v16M3 9h5M3 15h5M16 9h5M16 15h5"/>{% elif kind == "series" %}<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 3l4 4 4-4"/>{% else %}<path d="M7 7h10a5 5 0 0 1 5 5v2a3.5 3.5 0 0 1-6.3 2.1L15 15H9l-.7 1.1A3.5 3.5 0 0 1 2 14v-2a5 5 0 0 1 5-5z"/><path d="M8 9.5v3M6.5 11h3M15.5 10h.01M17.5 12h.01"/>{% endif %}</svg></span>{% endmacro %}
@@ -31,12 +33,20 @@
 </div>
 {% endmacro %}
 
+{% macro stars(value, action, label="Your rating") %}
+<div class="stars" role="group" aria-label="{{ label }}">
+  {% for star in range(1, 6) %}
+  <button class="star{% if value and star <= value %} filled{% endif %}" name="rating" value="{{ 0 if star == value else star }}" formaction="{{ action }}" aria-pressed="{{ 'true' if star == value else 'false' }}" aria-label="{{ star }} of 5 stars" title="{{ 'Clear rating' if star == value else 'Rate %d of 5' % star }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/></svg></button>
+  {% endfor %}
+</div>
+{% endmacro %}
+
 {% macro title_row(title, remove_url=none) %}
 <li>
   {{ kind_icon(title.kind) }}
   {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
   <a href="/titles/{{ title.id }}">{{ title.name }}</a>
-  <span class="muted">{% set facts = [title.year, title.rating and "★ %d" % title.rating, title.age_restriction and age_label(title.age_restriction), title.owned and "owned"] %}{{ facts | select | join(" · ") }}</span>
+  <span class="muted">{% set facts = [title.year, title.rating and "★ %d" % title.rating, title.age_restriction and age_label(title.age_restriction), title.ownership != "none" and title.ownership] %}{{ facts | select | join(" · ") }}</span>
   {{ status_badges(title) }}
   {% if remove_url %}
   <form class="row-action" method="post" action="{{ remove_url }}"><button class="small">Remove</button></form>

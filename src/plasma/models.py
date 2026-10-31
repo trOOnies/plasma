@@ -19,12 +19,15 @@ MAX_SEASONS = 99
 MAX_EPISODES_PER_SEASON = 999
 MAX_DURATION_MINUTES = 6000
 MAX_HOURS_PLAYED = 100_000
+MAX_RATING = 5
 FAVORITES_PLAN_NAME = "Favorites"
+PLANNED_PLAN_NAME = "Planned"
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
 SCREEN_GENRES = (
     "Action",
     "Adventure",
     "Animation",
+    "Anime",
     "Comedy",
     "Crime",
     "Documentary",
@@ -73,7 +76,7 @@ CONSOLE_NAME = re.compile(
 
 
 def describe_errors(error: ValidationError) -> list[str]:
-    """Readable one-line messages, such as "rating: Input should be less than or equal to 10"."""
+    """Readable one-line messages, such as "rating: Input should be less than or equal to 5"."""
     messages = []
     for item in error.errors():
         field = ".".join(str(part) for part in item["loc"])
@@ -103,6 +106,16 @@ class MultiplayerStatus(str, Enum):
     PLANNED = "planned"
     WATCHING = "watching"
     DROPPED = "dropped"
+
+
+class Ownership(str, Enum):
+    NONE = "none"
+    WANTED = "wanted"
+    OWNED = "owned"
+
+    @property
+    def label(self) -> str:
+        return "Neither" if self is Ownership.NONE else self.value.capitalize()
 
 
 class AgeRestriction(str, Enum):
@@ -152,15 +165,16 @@ def parse_episode_code(value: Any) -> tuple[int, int]:
 
 
 class Details(BaseModel):
-    """What titles and episodes share. The duration is in minutes."""
+    """What titles and episodes share. The duration is in minutes, the rating in stars."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     duration: int | None = Field(default=None, ge=1, le=MAX_DURATION_MINUTES)
     release_date: date | None = None
     description: str = ""
+    rating: int | None = Field(default=None, ge=1, le=MAX_RATING)
 
-    @field_validator("duration", "release_date", mode="before")
+    @field_validator("duration", "release_date", "rating", mode="before")
     @classmethod
     def blank_detail_is_none(cls, value: Any) -> Any:
         return None if value == "" else value
@@ -186,19 +200,19 @@ class TitleInput(Details):
     multiplayer_status: MultiplayerStatus = MultiplayerStatus.NONE
     age_restriction: AgeRestriction | None = None
     genres: list[Annotated[str, Field(min_length=1, max_length=50)]] = Field(default_factory=list)
-    rating: int | None = Field(default=None, ge=1, le=10)
     hours_played: int | None = Field(default=None, ge=0, le=MAX_HOURS_PLAYED)
     producer: str = Field(default="", max_length=200)
+    franchise: str = Field(default="", max_length=200)
     notes: str = ""
     watched_on: date | None = None
     seasons: list[int] = Field(default_factory=list, max_length=MAX_SEASONS)
 
-    @field_validator("year", "rating", "hours_played", "watched_on", mode="before")
+    @field_validator("year", "hours_played", "watched_on", mode="before")
     @classmethod
     def blank_is_none(cls, value: Any) -> Any:
         return None if value == "" else value
 
-    @field_validator("producer", "notes", mode="before")
+    @field_validator("producer", "franchise", "notes", mode="before")
     @classmethod
     def none_is_blank(cls, value: Any) -> Any:
         return "" if value is None else value
@@ -287,9 +301,21 @@ class PlatformInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     url: str = ""
     kind: PlatformKind = PlatformKind.STREAMING
+    release_year: int | None = Field(default=None, ge=1950, le=2100)
     image: str | None = None
 
     _check_image = field_validator("image")(check_image_name)
+
+    @field_validator("release_year", mode="before")
+    @classmethod
+    def blank_year_is_none(cls, value: Any) -> Any:
+        return None if value == "" else value
+
+    @model_validator(mode="after")
+    def check_release_year(self) -> "PlatformInput":
+        if self.release_year and self.kind is not PlatformKind.CONSOLE:
+            raise ValueError("release_year only applies to game consoles")
+        return self
 
     @field_validator("url")
     @classmethod
@@ -309,8 +335,9 @@ class PlanInput(BaseModel):
     @field_validator("name")
     @classmethod
     def check_name(cls, value: str) -> str:
-        if value.casefold() == FAVORITES_PLAN_NAME.casefold():
-            raise ValueError(f"{FAVORITES_PLAN_NAME} is reserved for the built-in plan")
+        for reserved in (FAVORITES_PLAN_NAME, PLANNED_PLAN_NAME):
+            if value.casefold() == reserved.casefold():
+                raise ValueError(f"{reserved} is reserved for a built-in plan")
         return value
 
 
@@ -319,7 +346,7 @@ class ImportEntry(TitleInput):
 
     watched_through: tuple[int, int] | None = None
     image: str | None = None
-    owned: bool = False
+    ownership: Ownership = Ownership.NONE
     episodes: dict[tuple[int, int], Details] = Field(default_factory=dict)
     platforms: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(
         default_factory=list
@@ -351,8 +378,8 @@ class ImportEntry(TitleInput):
 
     @model_validator(mode="after")
     def check_episodes_are_listed(self) -> "ImportEntry":
-        if self.owned and self.kind is not Kind.GAME:
-            raise ValueError("owned only applies to games")
+        if self.ownership is not Ownership.NONE and self.kind is not Kind.GAME:
+            raise ValueError("ownership only applies to games")
         if self.watched_through and not self._is_listed(*self.watched_through):
             raise ValueError("watched_through is not an episode listed in seasons")
         for season, number in self.episodes:

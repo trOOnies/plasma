@@ -8,7 +8,7 @@ import pytest
 
 from conftest import movie, series
 from plasma import library, web
-from plasma.models import Details, Kind, PlatformInput, Status, TitleInput
+from plasma.models import Details, Kind, Ownership, PlatformInput, Status, TitleInput
 
 
 def add(conn, data) -> int:
@@ -50,11 +50,11 @@ def test_home_offers_next_episode_and_returns_home(client, conn):
 
 
 def test_add_movie_through_the_form(client):
-    form = {"kind": "movie", "name": "Arrival", "year": "2016", "rating": "9"}
+    form = {"kind": "movie", "name": "Arrival", "year": "2016"}
     response = client.post("/titles", data=form)
     assert response.status_code == 303
     page = client.get(response.headers["location"]).text
-    assert "Arrival" in page and "2016" in page and "9/10" in page
+    assert "Arrival" in page and "2016" in page
 
 
 def test_add_movie_as_completed_stamps_today(client, conn):
@@ -74,7 +74,6 @@ def test_add_series_starts_without_seasons(client, conn):
     "form, message",
     [
         ({"kind": "movie", "name": ""}, "name"),
-        ({"kind": "movie", "name": "Film", "rating": "11"}, "rating"),
         ({"kind": "movie", "name": "Film", "year": "abc"}, "year"),
     ],
 )
@@ -86,7 +85,7 @@ def test_invalid_form_is_shown_again_with_values(client, conn, form, message):
 
 
 def test_invalid_form_keeps_what_was_typed(client):
-    form = {"kind": "movie", "name": "Keep me", "rating": "11"}
+    form = {"kind": "movie", "name": "Keep me", "year": "abc"}
     assert 'value="Keep me"' in client.post("/titles", data=form).text
 
 
@@ -98,7 +97,7 @@ def test_duplicate_title_is_rejected(client, conn):
 
 
 def test_edit_page_is_prefilled(client, conn):
-    title_id = add(conn, series("Show", seasons=(7, 13), year=2008, rating=9))
+    title_id = add(conn, series("Show", seasons=(7, 13), year=2008, rating=4))
     page = client.get(f"/titles/{title_id}/edit").text
     assert 'value="Show"' in page and 'value="2008"' in page
 
@@ -665,39 +664,52 @@ def test_producer_through_the_forms(client, kind):
     assert 'value="A24"' in client.get(f"{location}/edit").text
 
 
-def test_owned_button_toggles_on_games(client, conn):
+def test_ownership_buttons_on_games(client, conn):
     location = add_game(client)
     title_id = int(location.rsplit("/", 1)[1])
-    assert "Mark as owned" in client.get(location).text
-    assert client.post(f"{location}/owned").headers["location"] == location
-    assert "✓ Owned" in client.get(location).text
-    assert library.get_title(conn, title_id)["owned"] == 1
-    assert ">owned<" in client.get("/titles?kind=game").text
-    client.post(f"{location}/owned")
-    assert library.get_title(conn, title_id)["owned"] == 0
+    assert 'aria-label="Collection"' in client.get(location).text
+    response = client.post(f"{location}/ownership", data={"ownership": "wanted"})
+    assert response.headers["location"] == location
+    assert library.get_title(conn, title_id)["ownership"] == "wanted"
+    assert ">wanted<" in client.get("/titles?kind=game").text
+    page = client.get(location).text
+    assert 'name="ownership" value="none" aria-pressed="true"' in page
+    client.post(f"{location}/ownership", data={"ownership": "owned"})
+    assert library.get_title(conn, title_id)["ownership"] == "owned"
+    client.post(f"{location}/ownership", data={"ownership": "none"})
+    assert library.get_title(conn, title_id)["ownership"] == "none"
+    bad = client.post(f"{location}/ownership", data={"ownership": "stolen"})
+    assert bad.status_code == 422
 
 
 @pytest.mark.parametrize("data", [movie(), series()])
-def test_owned_is_only_for_games(client, conn, data):
+def test_ownership_is_only_for_games(client, conn, data):
     title_id = add(conn, data)
-    assert "Mark as owned" not in client.get(f"/titles/{title_id}").text
-    assert client.post(f"/titles/{title_id}/owned").status_code == 404
+    assert 'aria-label="Collection"' not in client.get(f"/titles/{title_id}").text
+    url = f"/titles/{title_id}/ownership"
+    assert client.post(url, data={"ownership": "owned"}).status_code == 404
 
 
-def test_owned_filter_is_on_the_games_tab(client):
-    assert 'name="owned"' in client.get("/titles?kind=game").text
-    assert 'name="owned"' not in client.get("/titles?kind=movie").text
-    client.post(f"{add_game(client)}/owned")
+def test_ownership_filter_is_on_the_games_tab(client):
+    assert 'name="ownership"' in client.get("/titles?kind=game").text
+    assert 'name="ownership"' not in client.get("/titles?kind=movie").text
+    client.post(f"{add_game(client)}/ownership", data={"ownership": "wanted"})
     add_game(client, name="Celeste")
-    page = client.get("/titles?kind=game&owned=true").text
+    page = client.get("/titles?kind=game&ownership=wanted").text
     assert "Hades" in page and "Celeste" not in page
+    page = client.get("/titles?kind=game&ownership=none").text
+    assert "Celeste" in page and "Hades" not in page
+    assert "Celeste" in client.get("/titles?kind=game&ownership=").text
 
 
-def test_editing_a_game_through_the_form_keeps_it_owned(client, conn):
+def test_editing_a_game_through_the_form_keeps_its_ownership_and_rating(client, conn):
     location = add_game(client)
-    client.post(f"{location}/owned")
-    client.post(location, data={"name": "Hades", "hours_played": "5"})
-    assert library.list_titles(conn)[0]["owned"] == 1
+    client.post(f"{location}/ownership", data={"ownership": "owned"})
+    client.post(f"{location}/rating", data={"rating": "4"})
+    data = {"name": "Hades", "hours_played": "5", "singleplayer": "true"}
+    assert client.post(location, data=data).status_code == 303
+    title = library.list_titles(conn)[0]
+    assert (title["ownership"], title["rating"], title["hours_played"]) == ("owned", 4, 5)
 
 
 def make_plan(client, name: str = "Family") -> str:
@@ -914,7 +926,6 @@ def test_names_are_escaped(client, conn):
         ("post", "/plans/999"),
         ("post", "/plans/999/delete"),
         ("post", "/plans/999/items/1/delete"),
-        ("post", "/titles/999/owned"),
         ("post", "/titles/999/plans/1"),
         ("post", "/platforms/999"),
         ("post", "/platforms/999/delete"),
@@ -1200,3 +1211,187 @@ def test_favorites_come_first_on_a_tab(client, conn):
     page = client.get("/titles?kind=movie").text
     assert page.index("Zulu") < page.index("Alpha") < page.index("Mike")
     assert "Aardvark" not in page
+
+
+def test_home_has_no_planned_card_but_keeps_up_next(client, conn):
+    add(conn, movie("Later", status=Status.PLANNED))
+    page = client.get("/").text
+    assert "</strong> planned" not in page
+    assert "Up next" in page and "Later" in page
+
+
+def test_anime_is_offered_for_series_and_movies(client):
+    assert 'value="Anime"' in client.get("/titles/new?kind=series").text
+    assert 'value="Anime"' in client.get("/titles/new?kind=movie").text
+
+
+@pytest.mark.parametrize("data", [movie(), TitleInput(kind=Kind.GAME, name="Hades"), series()])
+def test_rating_a_title_with_stars(client, conn, data):
+    title_id = add(conn, data)
+    url = f"/titles/{title_id}"
+    page = client.get(url).text
+    assert page.count('class="star"') == 5 and 'class="star filled"' not in page
+    response = client.post(f"{url}/rating", data={"rating": "3"})
+    assert response.headers["location"] == url
+    assert library.get_title(conn, title_id)["rating"] == 3
+    page = client.get(url).text
+    assert page.count('class="star filled"') == 3 and page.count('class="star"') == 2
+    assert 'name="rating" value="0"' in page
+    client.post(f"{url}/rating", data={"rating": "0"})
+    assert library.get_title(conn, title_id)["rating"] is None
+
+
+@pytest.mark.parametrize("rating", ["6", "-1", "lots", ""])
+def test_rating_out_of_range_is_refused(client, conn, rating):
+    title_id = add(conn, movie())
+    assert client.post(f"/titles/{title_id}/rating", data={"rating": rating}).status_code == 422
+    assert library.get_title(conn, title_id)["rating"] is None
+
+
+def test_rating_an_episode_with_stars(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    url = f"/titles/{title_id}/episodes/1/2"
+    assert client.get(url).text.count('class="star"') == 5
+    response = client.post(f"{url}/rating", data={"rating": "5"})
+    assert response.headers["location"] == url
+    assert library.get_episode(conn, title_id, 1, 2)["rating"] == 5
+    assert client.get(url).text.count('class="star filled"') == 5
+    assert "★ 5" in client.get(f"/titles/{title_id}").text
+
+
+def test_rating_from_the_season_page_stays_there(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    season = f"/titles/{title_id}/seasons/1"
+    assert client.get(season).text.count('class="star"') == 10
+    url = f"/titles/{title_id}/episodes/1/1/rating"
+    response = client.post(url, data={"rating": "2", "back": "season"})
+    assert response.headers["location"] == season
+
+
+def test_rating_a_missing_episode_is_a_404(client, conn):
+    title_id = add(conn, series(seasons=(1,)))
+    url = f"/titles/{title_id}/episodes/1/9/rating"
+    assert client.post(url, data={"rating": "2"}).status_code == 404
+
+
+def test_title_form_has_no_rating_field(client):
+    assert 'name="rating"' not in client.get("/titles/new?kind=movie").text
+
+
+def test_franchise_links_titles_in_release_order(client, conn):
+    first = add(conn, movie("Part One", year=2001, franchise="Saga"))
+    second = add(conn, series("Part Two", year=2005, franchise="Saga"))
+    third = add(conn, TitleInput(kind=Kind.GAME, name="Part Three", year=2010, franchise="Saga"))
+    page = client.get(f"/titles/{second}").text
+    assert f'href="/titles/{first}"' in page and f'href="/titles/{third}"' in page
+    assert "/titles?franchise=Saga" in page
+    listing = client.get("/titles?franchise=Saga").text
+    assert listing.index("Part One") < listing.index("Part Two") < listing.index("Part Three")
+    assert 'name="franchise" value="Saga"' in listing
+
+
+def test_favorites_do_not_reorder_a_franchise(client, conn):
+    add(conn, movie("Older", year=2001, franchise="Saga"))
+    newer = add(conn, movie("Newer", year=2005, franchise="Saga"))
+    with conn:
+        library.toggle_favorite(conn, newer)
+    listing = client.get("/titles?franchise=Saga").text
+    assert listing.index("Older") < listing.index("Newer")
+
+
+def test_franchise_through_the_form(client, conn):
+    add(conn, movie("One", franchise="Saga"))
+    page = client.get("/titles/new?kind=movie").text
+    assert '<option value="Saga">' in page
+    form = {"kind": "movie", "name": "Two", "franchise": "Saga"}
+    location = client.post("/titles", data=form).headers["location"]
+    assert 'name="franchise" value="Saga"' in client.get(f"{location}/edit").text
+    client.post(location, data={"name": "Two", "franchise": ""})
+    assert "Franchise:" not in client.get(location).text
+
+
+def test_lone_franchise_title_has_no_pager(client, conn):
+    title_id = add(conn, movie("Only", franchise="Saga"))
+    page = client.get(f"/titles/{title_id}").text
+    assert "Franchise:" in page and "franchise-pager" not in page
+
+
+def test_games_tab_sorts_favorites_then_wanted_then_owned(client, conn):
+    ids = {}
+    for name in ("Alpha", "Beta", "Delta", "Gamma", "Zeta"):
+        ids[name] = add(conn, TitleInput(kind=Kind.GAME, name=name))
+    with conn:
+        library.set_ownership(conn, ids["Beta"], Ownership.OWNED)
+        library.set_ownership(conn, ids["Delta"], Ownership.WANTED)
+        library.toggle_favorite(conn, ids["Zeta"])
+    page = client.get("/titles?kind=game").text
+    order = sorted(ids, key=page.index)
+    assert order == ["Zeta", "Delta", "Beta", "Alpha", "Gamma"]
+
+
+@pytest.mark.parametrize(
+    "url, data",
+    [
+        ("/titles/999/ownership", {"ownership": "owned"}),
+        ("/titles/999/rating", {"rating": "3"}),
+        ("/titles/999/episodes/1/1/rating", {"rating": "3"}),
+    ],
+)
+def test_new_buttons_on_a_missing_title_give_a_404(client, url, data):
+    assert client.post(url, data=data).status_code == 404
+
+
+def test_planned_plan_collects_every_planned_title(client, conn):
+    add(conn, movie("Soon", status=Status.PLANNED))
+    add(conn, series("Later", status=Status.PLANNED))
+    add(conn, TitleInput(kind=Kind.GAME, name="Hades", status=Status.PLANNED))
+    add(
+        conn,
+        TitleInput(
+            kind=Kind.GAME, name="Online", multiplayer=True, multiplayer_status="planned"
+        ),
+    )
+    done = add(conn, movie("Done", status=Status.COMPLETED))
+    page = client.get("/plans/planned").text
+    for name in ("Soon", "Later", "Hades", "Online"):
+        assert name in page
+    assert "Done" not in page
+    assert "/plans/planned" in client.get("/plans").text and "4 titles" in client.get("/plans").text
+    client.post(f"/titles/{done}/status", data={"status": "planned"})
+    assert "Done" in client.get("/plans/planned").text
+
+
+def test_planned_plan_when_empty(client):
+    assert "Nothing planned yet" in client.get("/plans/planned").text
+
+
+def test_planned_name_is_reserved_in_the_form(client):
+    response = client.post("/plans", data={"name": "planned"})
+    assert response.status_code == 422 and "reserved" in response.text
+
+
+def test_console_release_year_through_the_forms(client, conn):
+    form = {"name": "Wii", "kind": "console", "release_year": "2006"}
+    location = client.post("/platforms", data=form).headers["location"]
+    assert "Released in 2006" in client.get(location).text
+    assert "2006 · 0 titles" in client.get("/platforms").text
+    assert 'value="2006"' in client.get(location).text
+    bad = client.post(location, data={**form, "release_year": "12"})
+    assert bad.status_code == 422 and 'value="12"' in bad.text
+    client.post(location, data={**form, "release_year": ""})
+    assert library.list_platforms(conn)[0]["release_year"] is None
+
+
+def test_platform_forms_show_a_blank_release_year(client):
+    location = client.post("/platforms", data={"name": "Wii", "kind": "console"}).headers[
+        "location"
+    ]
+    assert 'value="None"' not in client.get(location).text
+
+
+def test_streaming_platform_drops_a_release_year(client, conn):
+    form = {"name": "Odd", "kind": "console", "release_year": "2006"}
+    location = client.post("/platforms", data=form).headers["location"]
+    client.post(location, data={**form, "kind": "streaming"})
+    platform = library.list_platforms(conn)[0]
+    assert (platform["kind"], platform["release_year"]) == ("streaming", None)

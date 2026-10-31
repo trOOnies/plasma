@@ -6,13 +6,14 @@ streaming_service:
 
 game_console:
   - name: PlayStation 5   # A website is optional.
+    release_year: 2020    # Game consoles only.
 
 movie:
   - name: Arrival
     year: 2016
     producer: FilmNation Entertainment
     status: completed
-    rating: 9
+    rating: 5                      # 1 to 5 stars.
     watched_on: 2024-03-02
     release_date: 2016-11-11
     duration: 116
@@ -23,13 +24,14 @@ movie:
   - name: Spirited Away
     year: 2001
     status: completed
-    rating: 10
+    rating: 5
   - name: 1917   # A bare number works as a name.
     year: 2019
     status: completed
-    rating: 8
+    rating: 4
   - name: Dune Part Two
     year: 2024
+    franchise: Dune                # Titles with the same franchise link up by release.
     status: planned                # Titles have no status unless you give them one.
   - name: Past Lives
     year: 2023
@@ -40,7 +42,7 @@ series:
     year: 2008
     seasons: [7, 13, 13, 13, 16]   # Episodes per season.
     status: completed              # Marks every episode watched.
-    rating: 10
+    rating: 5
     genres: [Crime, Drama, Thriller]
     age_restriction: 18+
   - name: The Wire
@@ -51,13 +53,14 @@ series:
     episodes:                      # Optional details for any episode.
       S01E01:
         duration: 60
+        rating: 4
         description: McNulty pushes for an investigation into a Baltimore drug crew.
   - name: Severance
     year: 2022
     platforms: [Apple TV]
     seasons: [9, 10]
     watched_through: S01E09
-    rating: 9
+    rating: 5
   - name: Lost
     year: 2004
     seasons: [25, 24, 23, 14, 17, 18]
@@ -71,7 +74,7 @@ game:
   - name: Hades
     year: 2020
     producer: Supergiant Games
-    owned: true                    # Games only.
+    ownership: owned               # Games only. Wanted or owned, or leave it out for neither.
     status: playing                # The singleplayer status.
     genres: [Action, Roguelike]
     age_restriction: 13+
@@ -80,7 +83,7 @@ game:
   - name: Celeste
     year: 2018
     status: completed
-    rating: 10
+    rating: 5
     watched_on: 2024-08-17         # The day you finished it.
     genres: [Platformer]
     age_restriction: 7+
