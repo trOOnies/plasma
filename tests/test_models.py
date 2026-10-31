@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from plasma.models import Details, ImportEntry, Kind, Status, TitleInput
+from plasma.models import Details, ImportEntry, Kind, PlatformInput, Status, TitleInput
 
 
 def test_blank_form_fields_become_none():
@@ -115,6 +115,35 @@ def test_episode_details_in_an_import_entry():
 def test_bad_episode_details_are_rejected(episodes):
     with pytest.raises(ValidationError):
         ImportEntry(kind="series", name="Show", seasons=[2], episodes=episodes)
+
+
+@pytest.mark.parametrize("url", ["", "https://a.com", "http://a.com/b", "HTTPS://A.COM"])
+def test_platform_urls(url):
+    assert PlatformInput(name="A", url=url).url == url
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "a.com", "https://", "https://a b.com"])
+def test_platform_urls_rejected(url):
+    with pytest.raises(ValidationError):
+        PlatformInput(name="A", url=url)
+
+
+def test_platform_needs_a_name():
+    with pytest.raises(ValidationError):
+        PlatformInput(name="  ")
+
+
+def test_import_platforms_accept_one_name_or_a_list():
+    assert ImportEntry(kind="movie", name="F", platforms="Netflix").platforms == ["Netflix"]
+    assert ImportEntry(kind="movie", name="F", platforms=["A", "B"]).platforms == ["A", "B"]
+    with pytest.raises(ValidationError):
+        ImportEntry(kind="movie", name="F", platforms=[""])
+
+
+def test_release_date_accepts_blank_and_rejects_nonsense():
+    assert Details(release_date="").release_date is None
+    with pytest.raises(ValidationError):
+        Details(release_date="soon")
 
 
 def test_unknown_import_field_is_rejected():

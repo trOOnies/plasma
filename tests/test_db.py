@@ -88,6 +88,33 @@ def test_upgrade_keeps_other_columns_and_the_identity_index(db_path):
     assert "titles_identity" in indexes
 
 
+def test_upgrade_adds_release_dates_and_platforms(db_path):
+    old_database(db_path)
+    conn = connect(db_path)
+    assert library.get_title(conn, 1)["release_date"] is None
+    assert library.episodes_by_season(conn, 2)[1][0]["release_date"] is None
+    assert library.list_platforms(conn) == []
+    conn.close()
+
+
+def test_upgrade_from_version_1_keeps_planned_titles(db_path):
+    conn = connect(db_path)
+    with conn:
+        conn.execute("INSERT INTO titles (kind, name, status) VALUES ('movie', 'Film', 'planned')")
+    conn.execute("ALTER TABLE titles DROP COLUMN release_date")
+    conn.execute("ALTER TABLE episodes DROP COLUMN release_date")
+    conn.executescript("DROP TABLE title_platforms; DROP TABLE platforms;")
+    conn.execute("PRAGMA user_version = 1")
+    conn.close()
+
+    conn = connect(db_path)
+    assert library.get_title(conn, 1)["status"] == "planned"
+    assert library.get_title(conn, 1)["release_date"] is None
+    assert library.list_platforms(conn) == []
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    conn.close()
+
+
 def test_upgrade_only_runs_once(db_path):
     old_database(db_path)
     conn = connect(db_path)

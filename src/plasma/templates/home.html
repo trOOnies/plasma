@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress %}
+{% from "_macros.html" import progress, release_row %}
 {% block content %}
 <section class="stats">
   <div><strong>{{ stats.movies_watched }}</strong> movies watched</div>
@@ -9,6 +9,24 @@
   <div><strong>{{ stats.average_rating or "–" }}</strong> average rating</div>
 </section>
 
+<h2>Just released</h2>
+{% if just_released %}
+<ul class="rows">
+  {% for release in just_released %}{{ release_row(release) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing came out in the last 30 days.</p>
+{% endif %}
+
+<h2>Upcoming</h2>
+{% if upcoming %}
+<ul class="rows">
+  {% for release in upcoming %}{{ release_row(release) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing is due in the next 90 days. Add a release date to a title or episode to see it here.</p>
+{% endif %}
+
 <h2>Continue watching</h2>
 {% if continuing %}
 <ul class="cards">
@@ -16,7 +34,10 @@
   <li class="card">
     <a class="card-title" href="/titles/{{ title.id }}">{{ title.name }}</a>
     {{ progress(title) }}
-    <p class="muted">{{ title.episodes_watched }} of {{ title.episodes_total }} episodes</p>
+    <p class="muted">
+      {{ title.episodes_watched }} of {{ title.episodes_total }} episodes{% if episode %}
+      · Next: <a href="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}">{{ episode | episode_code }}</a>{% endif %}
+    </p>
     {% if episode %}
     <form method="post" action="/titles/{{ title.id }}/next">
       <input type="hidden" name="back" value="home">

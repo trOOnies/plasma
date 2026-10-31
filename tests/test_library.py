@@ -1,10 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
 from conftest import movie, series
 from plasma import library
-from plasma.models import Details, Kind, Status
+from plasma.models import Details, Kind, PlatformInput, Status
 
 
 def status_of(conn, title_id):
@@ -337,6 +337,128 @@ def test_fill_episode_blanks_keeps_existing_values(conn):
     assert library.fill_episode_blanks(conn, title_id, 1, 1, Details(description="Plot"))
     episode = library.episodes_by_season(conn, title_id)[1][0]
     assert (episode["duration"], episode["description"]) == (45, "Plot")
+
+
+TODAY = date(2026, 6, 15)
+
+
+def on(days: int) -> date:
+    return TODAY + timedelta(days=days)
+
+
+def names(rows):
+    return [row["name"] for row in rows]
+
+
+def test_release_windows_include_their_edges(conn):
+    for name, days in [
+        ("Today", 0),
+        ("Day 1", 1),
+        ("Day 90", 90),
+        ("Day 91", 91),
+        ("Ago 30", -30),
+        ("Ago 31", -31),
+    ]:
+        library.create_title(conn, movie(name, release_date=on(days)))
+    assert names(library.upcoming(conn, TODAY)) == ["Day 1", "Day 90"]
+    assert names(library.just_released(conn, TODAY)) == ["Today", "Ago 30"]
+
+
+def test_titles_without_release_dates_are_left_out(conn):
+    library.create_title(conn, movie(year=2026))
+    assert library.upcoming(conn, TODAY) == []
+    assert library.just_released(conn, TODAY) == []
+
+
+def test_series_is_upcoming_through_its_next_episode(conn):
+    title_id = library.create_title(conn, series(seasons=(1, 2)))
+    library.update_episode(conn, title_id, 2, 2, Details(release_date=on(14)))
+    library.update_episode(conn, title_id, 2, 1, Details(release_date=on(7)))
+    [release] = library.upcoming(conn, TODAY)
+    assert (release["season"], release["number"], release["release_date"]) == (
+        2,
+        1,
+        on(7).isoformat(),
+    )
+
+
+def test_series_just_released_shows_its_latest_episode(conn):
+    title_id = library.create_title(conn, series(seasons=(2,)))
+    library.update_episode(conn, title_id, 1, 1, Details(release_date=on(-14)))
+    library.update_episode(conn, title_id, 1, 2, Details(release_date=on(-7)))
+    assert [row["number"] for row in library.just_released(conn, TODAY)] == [2]
+
+
+def test_a_new_season_can_be_upcoming_while_the_last_one_is_just_released(conn):
+    title_id = library.create_title(conn, series(seasons=(1, 1)))
+    library.update_episode(conn, title_id, 1, 1, Details(release_date=on(-5)))
+    library.update_episode(conn, title_id, 2, 1, Details(release_date=on(5)))
+    assert library.just_released(conn, TODAY)[0]["season"] == 1
+    assert library.upcoming(conn, TODAY)[0]["season"] == 2
+
+
+def test_series_release_date_on_the_title_works_without_episode_dates(conn):
+    library.create_title(conn, series("Show", release_date=on(5)))
+    [release] = library.upcoming(conn, TODAY)
+    assert (release["name"], release["season"]) == ("Show", None)
+
+
+def test_same_date_on_title_and_episode_links_the_episode(conn):
+    title_id = library.create_title(conn, series(seasons=(1,), release_date=on(5)))
+    library.update_episode(conn, title_id, 1, 1, Details(release_date=on(5)))
+    assert library.upcoming(conn, TODAY)[0]["season"] == 1
+
+
+def test_upcoming_is_soonest_first_and_just_released_newest_first(conn):
+    library.create_title(conn, movie("Later", release_date=on(20)))
+    library.create_title(conn, movie("Sooner", release_date=on(10)))
+    library.create_title(conn, movie("Older", release_date=on(-20)))
+    library.create_title(conn, movie("Newer", release_date=on(-10)))
+    assert names(library.upcoming(conn, TODAY)) == ["Sooner", "Later"]
+    assert names(library.just_released(conn, TODAY)) == ["Newer", "Older"]
+
+
+def test_adjacent_episodes_cross_seasons(conn):
+    title_id = library.create_title(conn, series(seasons=(2, 2)))
+    earlier, later = library.adjacent_episodes(conn, title_id, 2, 1)
+    assert (earlier["season"], earlier["number"]) == (1, 2)
+    assert (later["season"], later["number"]) == (2, 2)
+    assert library.adjacent_episodes(conn, title_id, 1, 1)[0] is None
+    assert library.adjacent_episodes(conn, title_id, 2, 2)[1] is None
+
+
+def test_platform_counts_and_title_filter(conn):
+    netflix = library.create_platform(conn, PlatformInput(name="Netflix"))
+    library.create_platform(conn, PlatformInput(name="Empty"))
+    first = library.create_title(conn, movie("A"))
+    library.create_title(conn, movie("B"))
+    library.set_title_platforms(conn, first, [netflix])
+    counts = {row["name"]: row["title_count"] for row in library.list_platforms(conn)}
+    assert counts == {"Empty": 0, "Netflix": 1}
+    assert names(library.list_titles(conn, platform_id=netflix)) == ["A"]
+
+
+def test_deleting_a_title_unlinks_its_platforms(conn):
+    netflix = library.create_platform(conn, PlatformInput(name="Netflix"))
+    title_id = library.create_title(conn, movie())
+    library.set_title_platforms(conn, title_id, [netflix])
+    library.delete_title(conn, title_id)
+    assert library.list_platforms(conn)[0]["title_count"] == 0
+
+
+def test_fill_title_platforms_reuses_platforms_whatever_the_case(conn):
+    library.create_platform(conn, PlatformInput(name="Netflix", url="https://netflix.com"))
+    title_id = library.create_title(conn, movie())
+    assert library.fill_title_platforms(conn, title_id, ["NETFLIX", "Hulu"])
+    assert [row["name"] for row in library.title_platforms(conn, title_id)] == ["Hulu", "Netflix"]
+    assert len(library.list_platforms(conn)) == 2
+
+
+def test_fill_title_platforms_leaves_a_title_that_has_some(conn):
+    title_id = library.create_title(conn, movie())
+    library.fill_title_platforms(conn, title_id, ["Netflix"])
+    assert library.fill_title_platforms(conn, title_id, ["Hulu"]) is False
+    assert [row["name"] for row in library.title_platforms(conn, title_id)] == ["Netflix"]
 
 
 def test_description_is_stored_apart_from_notes(conn):

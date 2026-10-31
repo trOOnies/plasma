@@ -5,7 +5,9 @@ Personal TV series &amp; movies watch tracker. A FastAPI app with server-rendere
 - Track movies and series as planned, watching, completed or dropped, with ratings and notes. Titles start with no status.
 - Tick off episodes one at a time or by season. A series' status follows its progress.
 - See what to watch next on the home page, and search and filter the library.
-- Keep a duration and description for every movie and episode.
+- Keep a duration, release date and description for every movie and episode.
+- See what's upcoming and what just came out on the home page.
+- Keep one central list of platforms, and record where each title can be watched.
 - Mark favorites, and show an image on each title's page.
 - Load your titles from YAML files in `info/`.
 
@@ -61,6 +63,8 @@ movies:
     status: completed      # planned, watching, completed or dropped. Blank by default.
     rating: 9              # 1 to 10.
     duration: 116          # Minutes.
+    release_date: 2016-11-11
+    platforms: [Netflix, Prime Video]   # New names are added to the Platforms tab.
     watched_on: 2024-03-02
     description: A linguist is asked to talk to the aliens who have just landed.
     notes: Worth a rewatch.        # Your own thoughts.
@@ -75,11 +79,14 @@ series:
     episodes:                       # Optional details for any episode.
       S01E01:
         duration: 60
+        release_date: 2002-06-02
         description: The first episode.
   - name: Breaking Bad
     seasons: [7, 13, 13, 13, 16]
     status: completed               # Marks every episode watched.
 ```
+
+The home page's Upcoming section shows releases in the next 90 days, and Just released shows the last 30. A series appears through its own `release_date` or any episode's, so give a new season's first episode a date to see it there.
 
 Titles are matched by kind, name (ignoring case) and year, so two films can share a name if their years differ.
 
@@ -95,7 +102,7 @@ A repeat import does these four things and nothing else:
 
 - Adds new titles.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
-- Fills in a rating, duration, description or notes that are still blank, for titles and episodes.
+- Fills in a rating, duration, release date, description, notes or platforms that are still blank, for titles and episodes.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.
 
 To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI.

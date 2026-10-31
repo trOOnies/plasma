@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ episode | episode_code }} · {{ title.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/titles/{{ title.id }}">{{ title.name }}</a><span>›</span><a href="/titles/{{ title.id }}/seasons/{{ episode.season }}">Season {{ episode.season }}</a>
+</nav>
+<h1>Edit {{ episode | episode_code }}</h1>
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form class="stacked" method="post" action="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}/details">
+  <div class="field-row">
+    <label>Duration (minutes)
+      <input name="duration" type="number" min="1" max="6000" value="{{ form.duration }}">
+    </label>
+    <label>Release date
+      <input name="release_date" type="date" value="{{ form.release_date }}">
+    </label>
+  </div>
+  <label>Description
+    <textarea name="description" rows="4">{{ form.description }}</textarea>
+  </label>
+  <div class="actions">
+    <button class="primary">Save</button>
+    <a class="button" href="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

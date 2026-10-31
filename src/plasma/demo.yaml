@@ -6,6 +6,7 @@ movies:
     status: completed
     rating: 9
     watched_on: 2024-03-02
+    release_date: 2016-11-11
     duration: 116
     description: A linguist is asked to talk to the aliens who have just landed.
     notes: Worth a rewatch once you know the ending.
@@ -32,6 +33,7 @@ series:
     rating: 10
   - name: The Wire
     year: 2002
+    platforms: [HBO Max]           # Created on the Platforms tab if it's new.
     seasons: [13, 12, 12, 13, 10]
     watched_through: S02E04        # Marks everything up to this episode watched.
     episodes:                      # Optional details for any episode.
@@ -40,6 +42,7 @@ series:
         description: McNulty pushes for an investigation into a Baltimore drug crew.
   - name: Severance
     year: 2022
+    platforms: [Apple TV]
     seasons: [9, 10]
     watched_through: S01E09
     rating: 9

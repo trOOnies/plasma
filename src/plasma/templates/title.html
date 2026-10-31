@@ -37,8 +37,15 @@
     <p class="meta">
       {% if title.rating %}<span>★ {{ title.rating }}/10</span>{% endif %}
       {% if title.duration %}<span class="muted">{{ title.duration | duration }}</span>{% endif %}
+      {% if title.release_date %}<span class="muted">Release date: {{ title.release_date | long_date }}</span>{% endif %}
       {% if title.kind == "movie" and title.watched_on %}<span class="muted">Watched {{ title.watched_on }}</span>{% endif %}
     </p>
+
+    {% if platforms %}
+    <p class="platform-list">
+      {% for platform in platforms %}<a class="platform-chip" href="/platforms/{{ platform.id }}">{{ platform.name }}</a>{% endfor %}
+    </p>
+    {% endif %}
 
     {% if title.description %}<p class="description">{{ title.description }}</p>{% endif %}
     {% if title.notes %}
@@ -57,9 +64,8 @@
     {% set watched = episodes | selectattr("watched") | list | length %}
     <section class="season" id="season-{{ season }}">
       <div class="season-head">
-        <h2>Season {{ season }}</h2>
+        <h2><a href="/titles/{{ title.id }}/seasons/{{ season }}">Season {{ season }}</a></h2>
         <span class="muted">{{ watched }}/{{ episodes | length }}</span>
-        <a class="button small details-link" href="/titles/{{ title.id }}/seasons/{{ season }}">Episode details</a>
         <button class="small" name="watched" value="{{ 'false' if watched == episodes | length else 'true' }}"
                 formaction="/titles/{{ title.id }}/seasons/{{ season }}">
           {{ "Clear season" if watched == episodes | length else "Mark season watched" }}

@@ -2,52 +2,113 @@
 {% block title %}Help · Plasma{% endblock %}
 {% block content %}
 <div class="help">
-  <h1>Help</h1>
-  <p>Plasma keeps track of the movies and TV series you watch. Everything stays on your own computer.</p>
+  <section class="help-hero">
+    <p class="help-hero-emoji" aria-hidden="true">🍿🎬📺</p>
+    <h1>Welcome to plasma!</h1>
+    <p>Your own little corner for every series and movie you love, hate-watch, or swear you'll start next week. 😄</p>
+    <p class="help-hero-small">🔒 Everything stays right here on your computer.</p>
+    <nav class="help-jump" aria-label="Help topics">
+      <a href="#around">🧭 Getting around</a>
+      <a href="#tracking">✅ Tracking</a>
+      <a href="#status">🚦 Status</a>
+      <a href="#details">💖 Favorites</a>
+      <a href="#platforms">📡 Platforms</a>
+      <a href="#import">📥 Importing</a>
+      <a href="#leaving">🚪 Leaving</a>
+    </nav>
+  </section>
 
-  <h2>Getting around</h2>
-  <ul>
-    <li><strong>Home</strong> (click <a href="/">plasma</a>) shows your stats, the series you're in the middle of, and what's up next.</li>
-    <li><strong><a href="/titles">Library</a></strong> lists everything, and you can search it or filter by status and favorites.</li>
-    <li><strong><a href="/titles?kind=movie">Movies</a></strong> and <strong><a href="/titles?kind=series">Series</a></strong> show just one kind.</li>
-    <li><strong>+ Movie</strong> and <strong>+ Series</strong> add a new title.</li>
-  </ul>
+  <section class="help-section" id="around">
+    <h2>🧭 Getting around</h2>
+    <div class="help-grid">
+      <div class="help-card">
+        <h3>🏠 Home</h3>
+        <p>Click <a href="/">plasma</a> for your stats, what's fresh, what's coming, and where you left off.</p>
+      </div>
+      <div class="help-card">
+        <h3>📺 Series &amp; 🎞️ Movies</h3>
+        <p>Browse <a href="/titles?kind=series">Series</a> or <a href="/titles?kind=movie">Movies</a>, then search or filter by status and favorites.</p>
+      </div>
+      <div class="help-card">
+        <h3>📡 Platforms</h3>
+        <p>Your streaming services live in <a href="/platforms">one central list</a>.</p>
+      </div>
+      <div class="help-card">
+        <h3>➕ New stuff</h3>
+        <p>Use <strong>+ Series</strong> or <strong>+ Movie</strong> at the top right to add something new.</p>
+      </div>
+    </div>
+  </section>
 
-  <h2>Tracking what you watch</h2>
-  <ul>
-    <li>New titles have no status. Click a status on a title's page to set it: Planned, Watching, Completed or Dropped. Click the highlighted one again to clear it.</li>
-    <li>Click an episode number to mark it watched. Every episode before it is marked too.</li>
-    <li><strong>Mark season watched</strong> also marks all earlier seasons.</li>
-    <li>Click an earlier watched episode to go back to it. Everything after it is unmarked, along with its watch dates.</li>
-    <li>Click your last watched episode to unmark just that one.</li>
-    <li><strong>Clear season</strong> only unmarks that season.</li>
-    <li>The <strong>Watched S01E02</strong> button marks your next episode, and it also appears on the home page.</li>
-  </ul>
+  <section class="help-section" id="tracking">
+    <h2>✅ Tracking what you watch</h2>
+    <div class="help-grid">
+      <div class="help-card">
+        <h3>👆 One click, all caught up</h3>
+        <p>Click an episode number and everything before it gets marked too. <strong>Mark season watched</strong> does the same for earlier seasons.</p>
+      </div>
+      <div class="help-card">
+        <h3>⏪ Oops, went too far?</h3>
+        <p>Click an earlier watched episode to jump back to it. Everything after it gets unmarked, <strong>including the watch dates</strong>, so click carefully!</p>
+      </div>
+      <div class="help-card">
+        <h3>↩️ Just one step back</h3>
+        <p>Click your last watched episode to unmark only that one. <strong>Clear season</strong> unmarks a single season.</p>
+      </div>
+      <div class="help-card">
+        <h3>⏭️ Next up</h3>
+        <p>The <strong>Watched S01E02</strong> button marks your next episode, right from the title page or home.</p>
+      </div>
+      <div class="help-card">
+        <h3>🔎 Season &amp; episode pages</h3>
+        <p>Click a season's name to see all its episodes, then click an episode for its own page. Each one has an <strong>Edit</strong> button for durations, release dates and descriptions.</p>
+      </div>
+      <div class="help-card">
+        <h3>🗓️ Upcoming &amp; Just released</h3>
+        <p>Home shows releases from the last 30 days and the next 90. New season coming? Give its first episode a release date. ✨</p>
+      </div>
+    </div>
+  </section>
 
-  <h2>How series status works</h2>
-  <p>A series' status follows its episodes: some watched is Watching, and all of them is Completed. With nothing watched it has no status, unless you set it to Planned. The status buttons that don't match your episodes are disabled.</p>
-  <ul>
-    <li><strong>Completed</strong> marks every episode watched.</li>
-    <li><strong>Dropped</strong> stays until you pick another status.</li>
-    <li>If you add a season to a completed series, it goes back to Watching.</li>
-  </ul>
+  <section class="help-section" id="status">
+    <h2>🚦 How status works</h2>
+    <p>New titles start with no status at all. Planned is your call! Click a status on a title's page to set it, and click it again to clear it.</p>
+    <ul class="help-list">
+      <li><span aria-hidden="true">📌</span> <strong>Planned</strong> puts it on your Up next list.</li>
+      <li><span aria-hidden="true">▶️</span> <strong>Watching</strong> turns on by itself once you mark a series' first episode.</li>
+      <li><span aria-hidden="true">🏁</span> <strong>Completed</strong> marks every episode of a series watched.</li>
+      <li><span aria-hidden="true">🗑️</span> <strong>Dropped</strong> sticks until you pick something else. No hard feelings.</li>
+    </ul>
+    <p class="help-tip">💡 Greyed-out buttons on a series don't match your episodes. Add a new season to a finished show and it hops back to Watching.</p>
+  </section>
 
-  <h2>Favorites and details</h2>
-  <ul>
-    <li>Click the heart next to a title's name to make it a favorite, and click again to undo it.</li>
-    <li>The <strong>description</strong> says what the title is about, and <strong>notes</strong> are your own thoughts. Change either with <strong>Edit</strong>.</li>
-    <li>Movies have a duration in minutes, also under <strong>Edit</strong>.</li>
-    <li>Episodes have a duration and description. Click <strong>Episode details</strong> on a season to edit them, and hover over an episode number to see them.</li>
-  </ul>
+  <section class="help-section" id="details">
+    <h2>💖 Favorites, descriptions &amp; notes</h2>
+    <ul class="help-list">
+      <li><span aria-hidden="true">🩷</span> Click the heart next to a title's name to make it a favorite.</li>
+      <li><span aria-hidden="true">📝</span> The <strong>description</strong> says what it's about, and <strong>notes</strong> are all yours. Both are under <strong>Edit</strong>.</li>
+      <li><span aria-hidden="true">👀</span> Hover over an episode number for a quick peek at its details.</li>
+    </ul>
+  </section>
 
-  <h2>Adding titles from files</h2>
-  <p>You can add many titles at once by listing them in <code>info/library.yaml</code>, then running <code>make import</code>.</p>
-  <pre><code>movies:
+  <section class="help-section" id="platforms">
+    <h2>📡 Where to watch</h2>
+    <p>Add your services on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a series or movie. Each platform has a page listing everything you've got on it. 🎉</p>
+  </section>
+
+  <section class="help-section" id="import">
+    <h2>📥 Adding lots of titles at once</h2>
+    <p>List your titles in <code>info/library.yaml</code> and run <code>make import</code>.</p>
+    <details class="help-details">
+      <summary>📄 Show me an example</summary>
+      <pre><code>movies:
   - name: Arrival
     year: 2016
     status: completed
     rating: 9
     duration: 116
+    release_date: 2016-11-11
+    platforms: [Netflix]
     description: A linguist is asked to talk to the aliens.
     notes: Worth a rewatch.
     image: arrival.jpg
@@ -60,23 +121,29 @@ series:
     episodes:
       S01E01:
         duration: 60
+        release_date: 2002-06-02
         description: The first episode.</code></pre>
-  <p>Importing again is safe, because it won't undo anything you changed here. It adds new titles and episodes, and fills in a rating, duration, description or notes that are still blank.</p>
+    </details>
+    <p class="help-tip">👍 Importing again is safe. It won't undo anything you changed here, and only fills in what's still blank.</p>
+    <h3>🖼️ Adding images</h3>
+    <ol class="help-steps">
+      <li>Drop a JPG, PNG, WebP, GIF or AVIF into <code>info/images/</code>.</li>
+      <li>Add its file name to the title, such as <code>image: arrival.jpg</code>.</li>
+      <li>Run <code>make import</code>. Ta-da! ✨</li>
+    </ol>
+  </section>
 
-  <h2>Adding images</h2>
-  <p>Images come from <code>info/</code> and can't be uploaded from the app:</p>
-  <ol>
-    <li>Put the file in <code>info/images/</code>. It can be a JPG, PNG, WebP, GIF or AVIF.</li>
-    <li>Add its file name to the title in <code>info/library.yaml</code>, such as <code>image: arrival.jpg</code>.</li>
-    <li>Run <code>make import</code>.</li>
-  </ol>
+  <section class="help-section" id="leaving">
+    <h2>🚪 Leaving plasma</h2>
+    <p>The door button at the top right stops plasma and closes the page. Your changes save as you go, and anything typed into an open form is saved first.</p>
+    <p class="help-tip">🖐️ Browsers only let pages close themselves sometimes. If the tab stays open, plasma has still stopped, so just close it yourself. Run <code>make serve</code> to come back!</p>
+  </section>
 
-  <h2>Leaving Plasma</h2>
-  <p>The door button in the top right corner stops Plasma and closes the page. Changes are saved as you make them, and anything you've typed into an open form is saved first.</p>
-  <p>Browsers only let a page close itself in some cases. If yours doesn't, Plasma is still stopped and you can close the tab yourself. Run <code>make serve</code> to start it again.</p>
-
-  <h2>About</h2>
-  <p>The source code is at <a href="https://github.com/trOOnies/plasma">github.com/trOOnies/plasma</a>.</p>
-  <p>Plasma is free software, released under the <a href="https://github.com/trOOnies/plasma/blob/main/LICENSE">GNU General Public License v3.0</a>.</p>
+  <section class="help-section help-about">
+    <h2>🌟 About plasma</h2>
+    <p>🐙 Peek at the code at <a href="https://github.com/trOOnies/plasma">github.com/trOOnies/plasma</a>.</p>
+    <p>📜 plasma is free software, released under the <a href="https://github.com/trOOnies/plasma/blob/main/LICENSE">GNU General Public License v3.0</a>.</p>
+    <p>Happy watching! 🍿</p>
+  </section>
 </div>
 {% endblock %}

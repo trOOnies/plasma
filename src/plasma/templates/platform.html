@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import title_row %}
+{% block title %}{{ platform.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/platforms">Platforms</a>
+</nav>
+<h1>{{ platform.name }}</h1>
+{% if platform.url %}<p><a href="{{ platform.url }}" rel="noreferrer">{{ platform.url }}</a></p>{% endif %}
+
+{% if titles %}
+<ul class="rows">
+  {% for title in titles %}{{ title_row(title) }}{% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing here yet. Pick this platform when you edit a series or movie.</p>
+{% endif %}
+
+<h2>Edit platform</h2>
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+<form class="stacked" method="post" action="/platforms/{{ platform.id }}">
+  <label>Name
+    <input name="name" value="{{ form.name }}" required maxlength="100">
+  </label>
+  <label>Website (optional)
+    <input name="url" type="url" value="{{ form.url }}">
+  </label>
+  <div class="actions">
+    <button class="primary">Save</button>
+  </div>
+</form>
+
+<form class="danger-zone" method="post" action="/platforms/{{ platform.id }}/delete"
+      onsubmit="return confirm('Delete this platform? It will be removed from every title.')">
+  <button class="danger">Delete platform</button>
+</form>
+{% endblock %}

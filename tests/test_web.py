@@ -1,12 +1,13 @@
+import re
 import signal
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
 
 from conftest import movie, series
 from plasma import library, web
-from plasma.models import Status
+from plasma.models import Details, PlatformInput, Status
 
 
 def add(conn, data) -> int:
@@ -126,7 +127,7 @@ def test_adding_a_season_to_a_finished_series_through_the_form(client, conn):
 def test_delete(client, conn):
     title_id = add(conn, movie())
     response = client.post(f"/titles/{title_id}/delete")
-    assert response.headers["location"] == "/titles"
+    assert response.headers["location"] == "/titles?kind=movie"
     assert client.get(f"/titles/{title_id}").status_code == 404
 
 
@@ -264,25 +265,30 @@ def test_format_duration(minutes, text):
     assert web.format_duration(minutes) == text
 
 
-def test_season_page_404s_for_unknown_seasons_and_movies(client, conn):
-    assert client.get(f"/titles/{add(conn, series(seasons=(1,)))}/seasons/9").status_code == 404
-    assert client.get(f"/titles/{add(conn, movie())}/seasons/1").status_code == 404
+def test_season_and_episode_pages_404_for_unknown_ones_and_movies(client, conn):
+    show = add(conn, series(seasons=(1,)))
+    film = add(conn, movie())
+    assert client.get(f"/titles/{show}/seasons/9").status_code == 404
+    assert client.get(f"/titles/{film}/seasons/1").status_code == 404
+    assert client.get(f"/titles/{show}/episodes/1/9").status_code == 404
+    assert client.get(f"/titles/{film}/episodes/1/1").status_code == 404
 
 
 def test_season_page_saves_episode_details(client, conn):
     title_id = add(conn, series(seasons=(2, 2)))
-    assert "Episode details" in client.get(f"/titles/{title_id}").text
-    page = client.get(f"/titles/{title_id}/seasons/2").text
+    assert f'href="/titles/{title_id}/seasons/2"' in client.get(f"/titles/{title_id}").text
+    page = client.get(f"/titles/{title_id}/seasons/2/edit").text
     assert "S02E01" in page and "S02E02" in page
 
-    form = {"duration_1": "45", "description_1": "Plot", "duration_2": "", "description_2": ""}
+    form = {"duration_1": "45", "description_1": "Plot", "release_date_1": "2024-03-02"}
     response = client.post(f"/titles/{title_id}/seasons/2/details", data=form)
-    assert response.headers["location"] == f"/titles/{title_id}#season-2"
+    assert response.headers["location"] == f"/titles/{title_id}/seasons/2"
 
     first = library.episodes_by_season(conn, title_id)[2][0]
     assert (first["duration"], first["description"]) == (45, "Plot")
+    assert first["release_date"] == "2024-03-02"
     assert 'title="S02E01 · 45m · Plot"' in client.get(f"/titles/{title_id}").text
-    assert ">Plot</textarea>" in client.get(f"/titles/{title_id}/seasons/2").text
+    assert ">Plot</textarea>" in client.get(f"/titles/{title_id}/seasons/2/edit").text
 
 
 def test_season_page_invalid_details_save_nothing(client, conn):
@@ -292,6 +298,189 @@ def test_season_page_invalid_details_save_nothing(client, conn):
     assert response.status_code == 422
     assert "S01E02 duration" in response.text and 'value="45"' in response.text
     assert library.episodes_by_season(conn, title_id)[1][0]["duration"] is None
+
+
+def test_season_page_lists_episodes_and_links_to_them(client, conn):
+    title_id = add(conn, series(seasons=(2, 2, 1)))
+    with conn:
+        library.update_episode(conn, title_id, 2, 1, Details(duration=45, description="Plot"))
+    page = client.get(f"/titles/{title_id}/seasons/2").text
+    assert f'href="/titles/{title_id}/episodes/2/1"' in page
+    assert "45m" in page and "Plot" in page
+    assert f'href="/titles/{title_id}/seasons/1"' in page
+    assert f'href="/titles/{title_id}/seasons/3"' in page
+
+
+def test_season_page_buttons_stay_on_the_season_page(client, conn):
+    title_id = add(conn, series(seasons=(2, 2)))
+    url = f"/titles/{title_id}/seasons/2"
+    data = {"back": "season"}
+    response = client.post(f"/titles/{title_id}/episodes/2/1", data=data)
+    assert response.headers["location"] == url
+    response = client.post(url, data={**data, "watched": "true"})
+    assert response.headers["location"] == url
+    assert library.get_title(conn, title_id)["episodes_watched"] == 4
+
+
+def test_episode_page(client, conn):
+    title_id = add(conn, series(seasons=(2, 2)))
+    data = Details(duration=45, release_date="2024-03-02", description="Plot")
+    with conn:
+        library.update_episode(conn, title_id, 1, 2, data)
+    page = client.get(f"/titles/{title_id}/episodes/1/2").text
+    assert "S01E02" in page and "45m" in page and "Mar 2, 2024" in page and "Plot" in page
+    assert f'href="/titles/{title_id}/seasons/1"' in page
+    assert f'href="/titles/{title_id}/episodes/1/1"' in page
+    assert f'href="/titles/{title_id}/episodes/2/1"' in page
+
+
+def test_episode_page_toggle_stays_on_the_episode(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    url = f"/titles/{title_id}/episodes/1/1"
+    assert "Mark watched" in client.get(url).text
+    assert client.post(url, data={"back": "episode"}).headers["location"] == url
+    assert "Unmark" in client.get(url).text
+
+
+def test_episode_edit_page(client, conn):
+    title_id = add(conn, series(seasons=(1,)))
+    url = f"/titles/{title_id}/episodes/1/1"
+    form = {"duration": "50", "release_date": "2024-03-02", "description": "Plot"}
+    assert client.post(f"{url}/details", data=form).headers["location"] == url
+    assert 'value="50"' in client.get(f"{url}/edit").text
+    assert ">Plot</textarea>" in client.get(f"{url}/edit").text
+
+
+def test_episode_edit_rejects_bad_values(client, conn):
+    title_id = add(conn, series(seasons=(1,)))
+    response = client.post(f"/titles/{title_id}/episodes/1/1/details", data={"duration": "0"})
+    assert response.status_code == 422
+    assert 'class="errors"' in response.text
+
+
+def test_home_links_to_the_next_episode(client, conn):
+    title_id = add(conn, series(seasons=(2,)))
+    client.post(f"/titles/{title_id}/episodes/1/1")
+    assert f'href="/titles/{title_id}/episodes/1/2"' in client.get("/").text
+
+
+def test_nav_order_and_no_library_tab(client):
+    page = client.get("/").text
+    nav = page.split("<nav>")[1].split("</nav>")[0]
+    assert re.findall(r">(\w+)</a>", nav) == ["Series", "Movies", "Platforms", "Help"]
+    assert page.index("+ Series") < page.index("+ Movie")
+
+
+def test_home_shows_upcoming_and_just_released(client, conn):
+    today = date.today()
+    add(conn, movie("Soon", release_date=today + timedelta(days=10)))
+    add(conn, movie("Fresh", release_date=today - timedelta(days=3)))
+    add(conn, movie("Old", release_date=today - timedelta(days=200)))
+    page = client.get("/").text
+    upcoming = page.split("<h2>Upcoming</h2>")[1].split("<h2>")[0]
+    released = page.split("<h2>Just released</h2>")[1].split("<h2>")[0]
+    assert "Soon" in upcoming and "in 10 days" in upcoming
+    assert "Fresh" in released and "3 days ago" in released
+    assert "Old" not in page
+
+
+def test_home_links_an_episode_release_to_its_page(client, conn):
+    title_id = add(conn, series(seasons=(1, 1)))
+    with conn:
+        soon = date.today() + timedelta(days=5)
+        library.update_episode(conn, title_id, 2, 1, Details(release_date=soon))
+    page = client.get("/").text
+    assert f'href="/titles/{title_id}/episodes/2/1"' in page and "S02E01" in page
+
+
+@pytest.mark.parametrize(
+    "days, text",
+    [(0, "today"), (1, "tomorrow"), (-1, "yesterday"), (5, "in 5 days"), (-5, "5 days ago")],
+)
+def test_relative_day(days, text):
+    assert web.relative_day((date.today() + timedelta(days=days)).isoformat()) == text
+
+
+def test_release_date_through_the_title_forms(client, conn):
+    form = {"kind": "series", "name": "Show", "release_date": "2024-03-02"}
+    location = client.post("/titles", data=form).headers["location"]
+    assert "Mar 2, 2024" in client.get(location).text
+    assert 'value="2024-03-02"' in client.get(f"{location}/edit").text
+
+
+def test_platforms_page_adds_and_lists(client):
+    assert "No platforms yet" in client.get("/platforms").text
+    form = {"name": "Netflix", "url": "https://www.netflix.com"}
+    location = client.post("/platforms", data=form).headers["location"]
+    assert "Netflix" in client.get("/platforms").text
+    assert 'href="https://www.netflix.com"' in client.get(location).text
+
+
+def test_platform_duplicates_ignore_case(client):
+    client.post("/platforms", data={"name": "Netflix"})
+    response = client.post("/platforms", data={"name": "NETFLIX"})
+    assert response.status_code == 409
+    assert "already exists" in response.text
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "netflix.com", "ftp://x.com"])
+def test_platform_url_must_be_http(client, url):
+    response = client.post("/platforms", data={"name": "Bad", "url": url})
+    assert response.status_code == 422
+    assert f'href="{url}"' not in response.text
+
+
+def test_platform_edit_and_delete(client, conn):
+    first = client.post("/platforms", data={"name": "One"}).headers["location"]
+    client.post("/platforms", data={"name": "Two"})
+    assert client.post(first, data={"name": "Uno"}).status_code == 303
+    assert "Uno" in client.get("/platforms").text
+    assert client.post(first, data={"name": "Two"}).status_code == 409
+    assert client.post(first, data={"name": ""}).status_code == 422
+
+    title_id = add(conn, movie())
+    platform_id = int(first.rsplit("/", 1)[1])
+    with conn:
+        library.set_title_platforms(conn, title_id, [platform_id])
+    assert client.post(f"{first}/delete").headers["location"] == "/platforms"
+    assert library.title_platforms(conn, title_id) == []
+    assert library.get_title(conn, title_id) is not None
+
+
+def test_title_form_picks_platforms(client, conn):
+    with conn:
+        netflix = library.create_platform(conn, PlatformInput(name="Netflix"))
+        prime = library.create_platform(conn, PlatformInput(name="Prime Video"))
+    assert 'name="platform_ids"' in client.get("/titles/new?kind=movie").text
+
+    form = {"kind": "movie", "name": "Film", "platform_ids": [netflix, prime]}
+    location = client.post("/titles", data=form).headers["location"]
+    page = client.get(location).text
+    assert f'href="/platforms/{netflix}"' in page and "Prime Video" in page
+
+    client.post(location, data={"name": "Film", "platform_ids": [prime]})
+    title_id = int(location.rsplit("/", 1)[1])
+    assert [p["name"] for p in library.title_platforms(conn, title_id)] == ["Prime Video"]
+    assert "Film" in client.get(f"/platforms/{prime}").text
+    assert "Film" not in client.get(f"/platforms/{netflix}").text
+
+    client.post(location, data={"name": "Film"})
+    assert library.title_platforms(conn, title_id) == []
+
+
+def test_title_form_keeps_picked_platforms_on_errors(client, conn):
+    with conn:
+        netflix = library.create_platform(conn, PlatformInput(name="Netflix"))
+    form = {"kind": "movie", "name": "", "platform_ids": [netflix]}
+    response = client.post("/titles", data=form)
+    assert response.status_code == 422
+    assert f'value="{netflix}" checked' in response.text
+
+
+def test_title_form_ignores_unknown_platforms(client, conn):
+    response = client.post("/titles", data={"kind": "movie", "name": "F", "platform_ids": [99]})
+    assert response.status_code == 303
+    assert library.title_platforms(conn, library.list_titles(conn)[0]["id"]) == []
 
 
 def test_exit_says_goodbye_and_stops_the_server(client, monkeypatch):
@@ -323,6 +512,7 @@ def test_help_page_covers_the_repo_and_license(client):
     page = client.get("/help")
     assert page.status_code == 200
     assert "https://github.com/trOOnies/plasma" in page.text
+    assert "🍿" in page.text and "help-hero" in page.text
     assert "GNU General Public License" in page.text
     assert 'href="/help"' in client.get("/").text
 
@@ -383,6 +573,13 @@ def test_names_are_escaped(client, conn):
         ("post", "/titles/999/delete"),
         ("post", "/titles/999/favorite"),
         ("get", "/titles/999/seasons/1"),
+        ("get", "/titles/999/seasons/1/edit"),
+        ("get", "/titles/999/episodes/1/1"),
+        ("get", "/titles/999/episodes/1/1/edit"),
+        ("post", "/titles/999/episodes/1/1/details"),
+        ("get", "/platforms/999"),
+        ("post", "/platforms/999"),
+        ("post", "/platforms/999/delete"),
         ("post", "/titles/999/seasons/1/details"),
         ("post", "/titles/999/next"),
         ("post", "/titles/999/episodes/1/1"),

@@ -181,6 +181,47 @@ series:
     assert library.episodes_by_season(conn, show["id"])[1][0]["duration"] == 50
 
 
+def test_release_dates_and_platforms_are_imported(conn, tmp_path):
+    text = """
+movies:
+  - name: Film
+    release_date: 2026-11-20
+    platforms: [Netflix, Hulu]
+series:
+  - name: Show
+    seasons: [1]
+    episodes:
+      S01E01:
+        release_date: 2026-12-25
+"""
+    importer.import_paths(conn, [write(tmp_path, text)])
+    film = library.find_title(conn, Kind.MOVIE, "Film", None)
+    assert film["release_date"] == "2026-11-20"
+    assert [p["name"] for p in library.title_platforms(conn, film["id"])] == ["Hulu", "Netflix"]
+    show = library.find_title(conn, Kind.SERIES, "Show", None)
+    assert library.episodes_by_season(conn, show["id"])[1][0]["release_date"] == "2026-12-25"
+
+
+def test_reimport_fills_in_a_release_date_and_platforms(conn, tmp_path):
+    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
+    text = "movies:\n  - name: Film\n    release_date: 2026-11-20\n    platforms: [Netflix]\n"
+    assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
+    film = library.find_title(conn, Kind.MOVIE, "Film", None)
+    assert film["release_date"] == "2026-11-20"
+    assert len(library.title_platforms(conn, film["id"])) == 1
+    assert importer.import_paths(conn, [write(tmp_path, text)]).unchanged == 1
+
+
+def test_reimport_keeps_platforms_changed_in_the_app(conn, tmp_path):
+    text = "movies:\n  - name: Film\n    platforms: [Netflix, Hulu]\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    film = library.find_title(conn, Kind.MOVIE, "Film", None)
+    hulu = library.title_platforms(conn, film["id"])[0]["id"]
+    library.set_title_platforms(conn, film["id"], [hulu])
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert [p["name"] for p in library.title_platforms(conn, film["id"])] == ["Hulu"]
+
+
 def test_imported_titles_have_no_status_unless_given_one(conn, tmp_path):
     text = "movies:\n  - name: A\n  - name: B\n    status: planned\n"
     importer.import_paths(conn, [write(tmp_path, text)])

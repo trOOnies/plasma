@@ -12,10 +12,10 @@ watched episode moves progress back to it, or unmarks it if it's the last one wa
 """
 
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from itertools import zip_longest
 
-from plasma.models import Details, Kind, Status, TitleInput
+from plasma.models import Details, Kind, PlatformInput, Status, TitleInput
 
 TITLE_SELECT = """
     SELECT t.*, COUNT(e.id) AS episodes_total, COALESCE(SUM(e.watched), 0) AS episodes_watched
@@ -23,14 +23,36 @@ TITLE_SELECT = """
 """
 UP_TO_EPISODE = "(season < ? OR (season = ? AND number <= ?))"
 AFTER_EPISODE = "(season > ? OR (season = ? AND number > ?))"
+BEFORE_EPISODE = "(season < ? OR (season = ? AND number < ?))"
+
+UPCOMING_DAYS = 90
+JUST_RELEASED_DAYS = 30
+
+# Episodes come first so that, on the same date, a title links to the actual episode.
+RELEASES_QUERY = """
+    SELECT t.id AS title_id, t.name, t.kind, e.season, e.number, e.release_date
+    FROM episodes e JOIN titles t ON t.id = e.title_id
+    WHERE e.release_date BETWEEN ? AND ?
+    UNION ALL
+    SELECT id, name, kind, NULL, NULL, release_date
+    FROM titles WHERE release_date BETWEEN ? AND ?
+"""
 
 
 class DuplicateTitleError(Exception):
     pass
 
 
+class DuplicatePlatformError(Exception):
+    pass
+
+
 def _today() -> str:
     return date.today().isoformat()
+
+
+def iso_date(value: date | None) -> str | None:
+    return value.isoformat() if value else None
 
 
 def _touch(conn: sqlite3.Connection, title_id: int) -> None:
@@ -59,6 +81,7 @@ def list_titles(
     query: str = "",
     order: str = "t.name COLLATE NOCASE",
     favorite: bool = False,
+    platform_id: int | None = None,
 ) -> list[sqlite3.Row]:
     clauses, params = [], []
     if kind:
@@ -69,6 +92,9 @@ def list_titles(
         params.append(status.value)
     if favorite:
         clauses.append("t.favorite = 1")
+    if platform_id:
+        clauses.append("t.id IN (SELECT title_id FROM title_platforms WHERE platform_id = ?)")
+        params.append(platform_id)
     if query:
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         clauses.append("t.name LIKE ? ESCAPE '\\'")
@@ -81,8 +107,8 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
     try:
         title_id = conn.execute(
             "INSERT INTO titles"
-            " (kind, name, year, status, rating, duration, description, notes, watched_on)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " (kind, name, year, status, rating, duration, release_date, description, notes,"
+            " watched_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 data.kind.value,
                 data.name,
@@ -90,9 +116,10 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
                 data.status.value,
                 data.rating,
                 data.duration,
+                iso_date(data.release_date),
                 data.description,
                 data.notes,
-                data.watched_on.isoformat() if data.watched_on else None,
+                iso_date(data.watched_on),
             ),
         ).lastrowid
     except sqlite3.IntegrityError as error:
@@ -109,7 +136,8 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
     try:
         conn.execute(
             "UPDATE titles SET name = ?, year = ?, status = ?, rating = ?, duration = ?,"
-            " description = ?, notes = ?, watched_on = ?, updated_at = datetime('now')"
+            " release_date = ?, description = ?, notes = ?, watched_on = ?,"
+            " updated_at = datetime('now')"
             " WHERE id = ?",
             (
                 data.name,
@@ -117,9 +145,10 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
                 data.status.value,
                 data.rating,
                 data.duration,
+                iso_date(data.release_date),
                 data.description,
                 data.notes,
-                data.watched_on.isoformat() if data.watched_on else None,
+                iso_date(data.watched_on),
                 title_id,
             ),
         )
@@ -137,20 +166,25 @@ def delete_title(conn: sqlite3.Connection, title_id: int) -> None:
     conn.execute("DELETE FROM titles WHERE id = ?", (title_id,))
 
 
-def fill_blanks(conn: sqlite3.Connection, title_id: int, **values: int | str | None) -> bool:
-    """Set the given columns only where the title has no value. Returns True if any changed."""
-    title = get_title(conn, title_id)
+def _fill_blanks(
+    conn: sqlite3.Connection, table: str, row: sqlite3.Row, values: dict[str, int | str | None]
+) -> bool:
     changes = {
         column: value
         for column, value in values.items()
-        if value not in (None, "") and title[column] in (None, "")
+        if value not in (None, "") and row[column] in (None, "")
     }
     if changes:
         assignments = ", ".join(f"{column} = ?" for column in changes)
         conn.execute(
-            f"UPDATE titles SET {assignments} WHERE id = ?", (*changes.values(), title_id)
+            f"UPDATE {table} SET {assignments} WHERE id = ?", (*changes.values(), row["id"])
         )
     return bool(changes)
+
+
+def fill_blanks(conn: sqlite3.Connection, title_id: int, **values: int | str | None) -> bool:
+    """Set the given columns only where the title has no value. Returns True if any changed."""
+    return _fill_blanks(conn, "titles", get_title(conn, title_id), values)
 
 
 def set_image(conn: sqlite3.Connection, title_id: int, image: str) -> None:
@@ -215,13 +249,40 @@ def episodes_by_season(conn: sqlite3.Connection, title_id: int) -> dict[int, lis
     return seasons
 
 
+def get_episode(
+    conn: sqlite3.Connection, title_id: int, season: int, number: int
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM episodes WHERE title_id = ? AND season = ? AND number = ?",
+        (title_id, season, number),
+    ).fetchone()
+
+
+def adjacent_episodes(
+    conn: sqlite3.Connection, title_id: int, season: int, number: int
+) -> tuple[sqlite3.Row | None, sqlite3.Row | None]:
+    """The episodes before and after this one, across seasons."""
+    params = (title_id, season, season, number)
+    earlier = conn.execute(
+        f"SELECT * FROM episodes WHERE title_id = ? AND {BEFORE_EPISODE}"
+        " ORDER BY season DESC, number DESC LIMIT 1",
+        params,
+    ).fetchone()
+    later = conn.execute(
+        f"SELECT * FROM episodes WHERE title_id = ? AND {AFTER_EPISODE}"
+        " ORDER BY season, number LIMIT 1",
+        params,
+    ).fetchone()
+    return earlier, later
+
+
 def update_episode(
     conn: sqlite3.Connection, title_id: int, season: int, number: int, data: Details
 ) -> None:
     conn.execute(
-        "UPDATE episodes SET duration = ?, description = ?"
+        "UPDATE episodes SET duration = ?, release_date = ?, description = ?"
         " WHERE title_id = ? AND season = ? AND number = ?",
-        (data.duration, data.description, title_id, season, number),
+        (data.duration, iso_date(data.release_date), data.description, title_id, season, number),
     )
 
 
@@ -229,22 +290,12 @@ def fill_episode_blanks(
     conn: sqlite3.Connection, title_id: int, season: int, number: int, data: Details
 ) -> bool:
     """Set an episode's details only where it has none. Returns True if any changed."""
-    cursor = conn.execute(
-        "UPDATE episodes SET duration = COALESCE(duration, ?),"
-        " description = CASE WHEN description = '' THEN ? ELSE description END"
-        " WHERE title_id = ? AND season = ? AND number = ?"
-        " AND ((duration IS NULL AND ? IS NOT NULL) OR (description = '' AND ? != ''))",
-        (
-            data.duration,
-            data.description,
-            title_id,
-            season,
-            number,
-            data.duration,
-            data.description,
-        ),
-    )
-    return cursor.rowcount > 0
+    values = {
+        "duration": data.duration,
+        "release_date": iso_date(data.release_date),
+        "description": data.description,
+    }
+    return _fill_blanks(conn, "episodes", get_episode(conn, title_id, season, number), values)
 
 
 def next_episode(conn: sqlite3.Connection, title_id: int) -> sqlite3.Row | None:
@@ -313,10 +364,7 @@ def _mark(conn: sqlite3.Connection, title_id: int, where: str, params: tuple, wa
 
 def toggle_episode(conn: sqlite3.Connection, title_id: int, season: int, number: int) -> bool:
     """Apply a click on an episode. Returns False if there is no such episode."""
-    episode = conn.execute(
-        "SELECT watched FROM episodes WHERE title_id = ? AND season = ? AND number = ?",
-        (title_id, season, number),
-    ).fetchone()
+    episode = get_episode(conn, title_id, season, number)
     if episode is None:
         return False
     if not episode["watched"]:
@@ -343,6 +391,98 @@ def watch_next(conn: sqlite3.Connection, title_id: int) -> None:
     episode = next_episode(conn, title_id)
     if episode:
         toggle_episode(conn, title_id, episode["season"], episode["number"])
+
+
+def _releases(conn: sqlite3.Connection, start: date, end: date, latest: bool) -> list[dict]:
+    """One row per title, with its latest or earliest release in the date range."""
+    bounds = (start.isoformat(), end.isoformat())
+    rows = conn.execute(RELEASES_QUERY, bounds * 2).fetchall()
+    best: dict[int, sqlite3.Row] = {}
+    for row in rows:
+        current = best.get(row["title_id"])
+        if current is None:
+            best[row["title_id"]] = row
+            continue
+        day, best_day = row["release_date"], current["release_date"]
+        if day > best_day if latest else day < best_day:
+            best[row["title_id"]] = row
+    ordered = sorted(best.values(), key=lambda row: row["release_date"], reverse=latest)
+    return [dict(row) for row in ordered]
+
+
+def upcoming(conn: sqlite3.Connection, today: date) -> list[dict]:
+    end = today + timedelta(days=UPCOMING_DAYS)
+    return _releases(conn, today + timedelta(days=1), end, latest=False)
+
+
+def just_released(conn: sqlite3.Connection, today: date) -> list[dict]:
+    return _releases(conn, today - timedelta(days=JUST_RELEASED_DAYS), today, latest=True)
+
+
+def list_platforms(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT p.*, COUNT(tp.title_id) AS title_count"
+        " FROM platforms p LEFT JOIN title_platforms tp ON tp.platform_id = p.id"
+        " GROUP BY p.id ORDER BY p.name COLLATE NOCASE"
+    ).fetchall()
+
+
+def get_platform(conn: sqlite3.Connection, platform_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM platforms WHERE id = ?", (platform_id,)).fetchone()
+
+
+def create_platform(conn: sqlite3.Connection, data: PlatformInput) -> int:
+    try:
+        return conn.execute(
+            "INSERT INTO platforms (name, url) VALUES (?, ?)", (data.name, data.url)
+        ).lastrowid
+    except sqlite3.IntegrityError as error:
+        raise DuplicatePlatformError(data.name) from error
+
+
+def update_platform(conn: sqlite3.Connection, platform_id: int, data: PlatformInput) -> None:
+    try:
+        conn.execute(
+            "UPDATE platforms SET name = ?, url = ? WHERE id = ?",
+            (data.name, data.url, platform_id),
+        )
+    except sqlite3.IntegrityError as error:
+        raise DuplicatePlatformError(data.name) from error
+
+
+def delete_platform(conn: sqlite3.Connection, platform_id: int) -> None:
+    conn.execute("DELETE FROM platforms WHERE id = ?", (platform_id,))
+
+
+def title_platforms(conn: sqlite3.Connection, title_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT p.* FROM platforms p JOIN title_platforms tp ON tp.platform_id = p.id"
+        " WHERE tp.title_id = ? ORDER BY p.name COLLATE NOCASE",
+        (title_id,),
+    ).fetchall()
+
+
+def set_title_platforms(
+    conn: sqlite3.Connection, title_id: int, platform_ids: list[int]
+) -> None:
+    conn.execute("DELETE FROM title_platforms WHERE title_id = ?", (title_id,))
+    conn.executemany(
+        "INSERT OR IGNORE INTO title_platforms (title_id, platform_id)"
+        " SELECT ?, id FROM platforms WHERE id = ?",
+        [(title_id, platform_id) for platform_id in platform_ids],
+    )
+
+
+def fill_title_platforms(conn: sqlite3.Connection, title_id: int, names: list[str]) -> bool:
+    """Link platforms by name, creating new ones, unless the title already has some."""
+    if not names or title_platforms(conn, title_id):
+        return False
+    ids = []
+    for name in names:
+        conn.execute("INSERT OR IGNORE INTO platforms (name) VALUES (?)", (name,))
+        ids.append(conn.execute("SELECT id FROM platforms WHERE name = ?", (name,)).fetchone()[0])
+    set_title_platforms(conn, title_id, ids)
+    return True
 
 
 def stats(conn: sqlite3.Connection) -> dict[str, int | float | None]:

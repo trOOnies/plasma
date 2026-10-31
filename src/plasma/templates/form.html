@@ -34,6 +34,10 @@
   </div>
 
   {% if series %}
+  <label>Release date
+    <input name="release_date" type="date" value="{{ form.release_date }}">
+    <small class="muted">When the series first came out. For a new season, set a date on its first episode.</small>
+  </label>
   <label>Episodes per season
     <input name="seasons" value="{{ form.seasons }}" placeholder="7, 13, 13">
     <small class="muted">
@@ -43,6 +47,9 @@
   </label>
   {% else %}
   <div class="field-row">
+    <label>Release date
+      <input name="release_date" type="date" value="{{ form.release_date }}">
+    </label>
     <label>Duration (minutes)
       <input name="duration" type="number" min="1" max="6000" value="{{ form.duration }}">
     </label>
@@ -51,6 +58,15 @@
     </label>
   </div>
   {% endif %}
+
+  <fieldset class="platform-picker">
+    <legend>Where to watch</legend>
+    {% for platform in platforms %}
+    <label><input type="checkbox" name="platform_ids" value="{{ platform.id }}" {% if platform.id in platform_ids %}checked{% endif %}> {{ platform.name }}</label>
+    {% else %}
+    <p class="muted">No platforms yet. <a href="/platforms">Add one</a> first.</p>
+    {% endfor %}
+  </fieldset>
 
   <label>Description
     <textarea name="description" rows="3" placeholder="What it's about">{{ form.description }}</textarea>
@@ -62,7 +78,7 @@
 
   <div class="actions">
     <button class="primary">Save</button>
-    <a class="button" href="{{ '/titles/%d' % title_id if title_id else '/titles' }}">Cancel</a>
+    <a class="button" href="{{ '/titles/%d' % title_id if title_id else '/titles?kind=' ~ form.kind }}">Cancel</a>
   </div>
 </form>
 

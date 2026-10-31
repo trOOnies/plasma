@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Edit season {{ season }} · {{ title.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/titles/{{ title.id }}">{{ title.name }}</a><span>›</span><a href="/titles/{{ title.id }}/seasons/{{ season }}">Season {{ season }}</a>
+</nav>
+<h1>Edit episodes</h1>
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form class="stacked episode-details" method="post" action="/titles/{{ title.id }}/seasons/{{ season }}/details">
+  {% for row in rows %}
+  <div class="episode-row">
+    <span class="code">{{ row | episode_code }}</span>
+    <label>Duration (minutes)
+      <input name="duration_{{ row.number }}" type="number" min="1" max="6000" value="{{ row.duration }}">
+    </label>
+    <label>Release date
+      <input name="release_date_{{ row.number }}" type="date" value="{{ row.release_date }}">
+    </label>
+    <label>Description
+      <textarea name="description_{{ row.number }}" rows="2">{{ row.description }}</textarea>
+    </label>
+  </div>
+  {% endfor %}
+  <div class="actions">
+    <button class="primary">Save</button>
+    <a class="button" href="/titles/{{ title.id }}/seasons/{{ season }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

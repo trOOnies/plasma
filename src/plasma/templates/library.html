@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% from "_macros.html" import heart, progress, status_badge, status_label %}
+{% from "_macros.html" import status_label, title_row %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
-<h1>{% if kind %}{{ "Movies" if kind.value == "movie" else "Series" }}{% else %}Library{% endif %}</h1>
+<h1>{% if kind %}{{ "Movies" if kind.value == "movie" else "Series" }}{% else %}Everything{% endif %}</h1>
 
 <form class="filters" method="get" action="/titles">
   {% if kind %}<input type="hidden" name="kind" value="{{ kind.value }}">{% endif %}
@@ -19,15 +19,7 @@
 
 {% if titles %}
 <ul class="rows">
-  {% for title in titles %}
-  <li>
-    {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
-    <a href="/titles/{{ title.id }}">{{ title.name }}</a>
-    <span class="muted">{{ title.kind }}{% if title.year %} · {{ title.year }}{% endif %}{% if title.rating %} · ★ {{ title.rating }}{% endif %}</span>
-    {{ status_badge(title.status) }}
-    {{ progress(title) }}
-  </li>
-  {% endfor %}
+  {% for title in titles %}{{ title_row(title) }}{% endfor %}
 </ul>
 {% else %}
 <p class="muted">No titles match.</p>

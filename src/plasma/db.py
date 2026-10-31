@@ -6,7 +6,7 @@ from pathlib import Path
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 TITLES_COLUMNS = """
     id INTEGER PRIMARY KEY,
@@ -17,6 +17,7 @@ TITLES_COLUMNS = """
         CHECK (status IN ('none', 'planned', 'watching', 'completed', 'dropped')),
     rating INTEGER CHECK (rating BETWEEN 1 AND 10),
     duration INTEGER,
+    release_date TEXT,
     description TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     favorite INTEGER NOT NULL DEFAULT 0,
@@ -37,30 +38,45 @@ CREATE TABLE IF NOT EXISTS episodes (
     season INTEGER NOT NULL,
     number INTEGER NOT NULL,
     duration INTEGER,
+    release_date TEXT,
     description TEXT NOT NULL DEFAULT '',
     watched INTEGER NOT NULL DEFAULT 0,
     watched_on TEXT,
     UNIQUE (title_id, season, number)
 );
+
+CREATE TABLE IF NOT EXISTS platforms (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    url TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS title_platforms (
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    platform_id INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE,
+    PRIMARY KEY (title_id, platform_id)
+);
 """
 
-# Columns that databases from before version 1 may be missing.
+# Columns that older databases may be missing.
 ADDED_COLUMNS = {
     "titles": {
         "duration": "INTEGER",
+        "release_date": "TEXT",
         "description": "TEXT NOT NULL DEFAULT ''",
         "favorite": "INTEGER NOT NULL DEFAULT 0",
         "image": "TEXT",
     },
     "episodes": {
         "duration": "INTEGER",
+        "release_date": "TEXT",
         "description": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
 COPIED_COLUMNS = (
-    "id, kind, name, year, rating, duration, description, notes, favorite, image,"
-    " watched_on, updated_at"
+    "id, kind, name, year, rating, duration, release_date, description, notes, favorite,"
+    " image, watched_on, updated_at"
 )
 
 
@@ -104,29 +120,39 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
-def _upgrade(conn: sqlite3.Connection) -> None:
+def _rebuild_titles(conn: sqlite3.Connection) -> None:
     """Rebuild titles, since SQLite can't change the status CHECK and default in place.
 
     Before version 1 every title started as planned, so planned says nothing about
-    what the user chose and becomes none. Foreign keys must be off here, or dropping
-    the old table would cascade and delete every episode.
+    what the user chose and becomes none.
+    """
+    conn.execute(f"CREATE TABLE titles_new ({TITLES_COLUMNS})")
+    conn.execute(
+        f"INSERT INTO titles_new ({COPIED_COLUMNS}, status)"
+        f" SELECT {COPIED_COLUMNS}, CASE status WHEN 'planned' THEN 'none' ELSE status END"
+        " FROM titles"
+    )
+    conn.execute("DROP TABLE titles")
+    conn.execute("ALTER TABLE titles_new RENAME TO titles")
+
+
+def _upgrade(conn: sqlite3.Connection) -> None:
+    """Bring an older database up to date in one transaction.
+
+    Foreign keys must be off here, or dropping the old titles table would cascade
+    and delete every episode.
     """
     conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
     try:
         with conn:
             conn.execute("BEGIN IMMEDIATE")
-            if _version(conn) >= SCHEMA_VERSION:
+            version = _version(conn)
+            if version >= SCHEMA_VERSION:
                 return
             _add_missing_columns(conn)
-            conn.execute(f"CREATE TABLE titles_new ({TITLES_COLUMNS})")
-            conn.execute(
-                f"INSERT INTO titles_new ({COPIED_COLUMNS}, status)"
-                f" SELECT {COPIED_COLUMNS}, CASE status WHEN 'planned' THEN 'none' ELSE status END"
-                " FROM titles"
-            )
-            conn.execute("DROP TABLE titles")
-            conn.execute("ALTER TABLE titles_new RENAME TO titles")
+            if version < 1:
+                _rebuild_titles(conn)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     finally:
         conn.execute("PRAGMA foreign_keys = ON")

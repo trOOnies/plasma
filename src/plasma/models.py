@@ -4,7 +4,7 @@ import re
 from datetime import date
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import (
     BaseModel,
@@ -52,16 +52,17 @@ def parse_episode_code(value: Any) -> tuple[int, int]:
 
 
 class Details(BaseModel):
-    """What movies and episodes both have: a duration in minutes and a description."""
+    """What titles and episodes share. The duration is in minutes."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     duration: int | None = Field(default=None, ge=1, le=MAX_DURATION_MINUTES)
+    release_date: date | None = None
     description: str = ""
 
-    @field_validator("duration", mode="before")
+    @field_validator("duration", "release_date", mode="before")
     @classmethod
-    def blank_duration_is_none(cls, value: Any) -> Any:
+    def blank_detail_is_none(cls, value: Any) -> Any:
         return None if value == "" else value
 
     @field_validator("description", mode="before")
@@ -124,17 +125,40 @@ class TitleInput(Details):
         return self
 
 
+class PlatformInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=100)
+    url: str = ""
+
+    @field_validator("url")
+    @classmethod
+    def check_url(cls, value: str) -> str:
+        # Shown as a link, so anything but http(s), such as javascript:, must stay out.
+        if value and not re.fullmatch(r"https?://\S+", value, re.IGNORECASE):
+            raise ValueError("use a full address starting with https://")
+        return value
+
+
 class ImportEntry(TitleInput):
     """A title in an info/ file, which can also say how far the user has got."""
 
     watched_through: tuple[int, int] | None = None
     image: str | None = None
     episodes: dict[tuple[int, int], Details] = Field(default_factory=dict)
+    platforms: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(
+        default_factory=list
+    )
 
     @field_validator("watched_through", mode="before")
     @classmethod
     def parse_episode_code(cls, value: Any) -> Any:
         return None if value is None else parse_episode_code(value)
+
+    @field_validator("platforms", mode="before")
+    @classmethod
+    def single_platform_is_a_list(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
 
     @field_validator("episodes", mode="before")
     @classmethod

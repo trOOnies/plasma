@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ episode | episode_code }} · {{ title.name }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/titles/{{ title.id }}">{{ title.name }}</a><span>›</span><a href="/titles/{{ title.id }}/seasons/{{ episode.season }}">Season {{ episode.season }}</a>
+</nav>
+<div class="title-head">
+  <h1>Episode {{ episode.number }} <span class="muted">{{ episode | episode_code }}</span></h1>
+  <div class="actions">
+    <form method="post" action="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}">
+      <input type="hidden" name="back" value="episode">
+      {% if episode.watched %}
+      <button>Unmark</button>
+      {% else %}
+      <button class="primary">Mark watched</button>
+      {% endif %}
+    </form>
+    <a class="button" href="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}/edit">Edit</a>
+  </div>
+</div>
+
+<p class="meta">
+  {% if episode.watched %}<span class="badge badge-completed">watched</span>{% endif %}
+  {% if episode.duration %}<span class="muted">{{ episode.duration | duration }}</span>{% endif %}
+  {% if episode.release_date %}<span class="muted">Release date: {{ episode.release_date | long_date }}</span>{% endif %}
+  {% if episode.watched_on %}<span class="muted">Watched {{ episode.watched_on }}</span>{% endif %}
+</p>
+
+{% if episode.description %}<p class="description">{{ episode.description }}</p>{% endif %}
+
+<div class="pager">
+  {% if earlier %}<a href="/titles/{{ title.id }}/episodes/{{ earlier.season }}/{{ earlier.number }}">← {{ earlier | episode_code }}</a>{% else %}<span></span>{% endif %}
+  {% if later %}<a href="/titles/{{ title.id }}/episodes/{{ later.season }}/{{ later.number }}">{{ later | episode_code }} →</a>{% endif %}
+</div>
+{% endblock %}

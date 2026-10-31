@@ -1,29 +1,47 @@
 {% extends "base.html" %}
-{% block title %}{{ title.name }} season {{ season }} · Plasma{% endblock %}
+{% block title %}Season {{ season }} · {{ title.name }} · Plasma{% endblock %}
 {% block content %}
-<h1>{{ title.name }} <span class="muted">Season {{ season }}</span></h1>
-
-{% if errors %}
-<ul class="errors" role="alert">
-  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-</ul>
-{% endif %}
-
-<form class="stacked episode-details" method="post" action="/titles/{{ title.id }}/seasons/{{ season }}/details">
-  {% for row in rows %}
-  <div class="episode-row">
-    <span class="code">{{ row | episode_code }}</span>
-    <label>Duration (minutes)
-      <input name="duration_{{ row.number }}" type="number" min="1" max="6000" value="{{ row.duration }}">
-    </label>
-    <label>Description
-      <textarea name="description_{{ row.number }}" rows="2">{{ row.description }}</textarea>
-    </label>
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/titles/{{ title.id }}">{{ title.name }}</a>
+</nav>
+<div class="title-head">
+  <div>
+    <h1>Season {{ season }}</h1>
+    <p class="muted">{{ watched }} of {{ episodes | length }} episodes watched</p>
   </div>
-  {% endfor %}
   <div class="actions">
-    <button class="primary">Save</button>
-    <a class="button" href="/titles/{{ title.id }}#season-{{ season }}">Cancel</a>
+    <form method="post" action="/titles/{{ title.id }}/seasons/{{ season }}">
+      <input type="hidden" name="back" value="season">
+      <button name="watched" value="{{ 'false' if watched == episodes | length else 'true' }}">
+        {{ "Clear season" if watched == episodes | length else "Mark season watched" }}
+      </button>
+    </form>
+    <a class="button" href="/titles/{{ title.id }}/seasons/{{ season }}/edit">Edit episodes</a>
   </div>
+</div>
+
+<form method="post">
+  <input type="hidden" name="back" value="season">
+  <ul class="rows episode-rows">
+    {% for episode in episodes %}
+    <li>
+      <button class="episode{% if episode.watched %} watched{% endif %}"
+              formaction="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}"
+              aria-pressed="{{ 'true' if episode.watched else 'false' }}"
+              aria-label="{{ episode | episode_code }}"
+              title="{{ episode | episode_tooltip }}">{{ episode.number }}</button>
+      <div class="episode-info">
+        <a href="/titles/{{ title.id }}/episodes/{{ episode.season }}/{{ episode.number }}">Episode {{ episode.number }}</a>
+        <span class="muted">{% if episode.duration %}{{ episode.duration | duration }}{% endif %}{% if episode.duration and episode.release_date %} · {% endif %}{% if episode.release_date %}{{ episode.release_date | long_date }}{% endif %}</span>
+        {% if episode.description %}<p>{{ episode.description }}</p>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
 </form>
+
+<div class="pager">
+  {% if earlier %}<a href="/titles/{{ title.id }}/seasons/{{ earlier }}">← Season {{ earlier }}</a>{% else %}<span></span>{% endif %}
+  {% if later %}<a href="/titles/{{ title.id }}/seasons/{{ later }}">Season {{ later }} →</a>{% endif %}
+</div>
 {% endblock %}
