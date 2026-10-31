@@ -1,3 +1,13 @@
+# Sensitive information
+info/
+
+# Local project files
+local/
+.vscode/
+.claude/
+.idea/
+.ruff_cache/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
