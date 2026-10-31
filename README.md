@@ -44,6 +44,8 @@ Both of these folders are gitignored:
 
 ### Files in `info/`
 
+The app needs the `info/` folder and an `info/library.yaml` file. If either is missing, `make serve` and `make import` create it empty. `make serve` then stops with an error explaining why, so add your titles, run `make import` and start it again. An empty `library.yaml` is valid, so the next `make serve` starts normally.
+
 Every `.yaml` or `.yml` file in `info/` is imported. Each one can have a `movies` list, a `series` list, or both:
 
 ```yaml

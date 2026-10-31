@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from conftest import movie, series
-from plasma import library
+from plasma import library, web
 from plasma.models import Status
 
 
@@ -206,3 +206,38 @@ def test_missing_pages_give_a_404_page(client, method, url):
     response = getattr(client, method)(url)
     assert response.status_code == 404
     assert "Not found" in response.text
+
+
+@pytest.fixture
+def uvicorn_calls(monkeypatch, tmp_path) -> list:
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    monkeypatch.setattr(web.uvicorn, "run", lambda *args, **kwargs: calls.append(args))
+    return calls
+
+
+def test_serve_creates_missing_inputs_and_stops_with_the_reason(uvicorn_calls, tmp_path, capsys):
+    assert web.main([]) == 1
+    assert uvicorn_calls == []
+    assert (tmp_path / "info" / "library.yaml").read_text() == ""
+    err = capsys.readouterr().err
+    assert "created empty" in err and "library.yaml" in err and "make import" in err
+
+
+def test_serve_starts_on_the_run_after_inputs_were_created(uvicorn_calls):
+    web.main([])
+    assert web.main([]) == 0
+    assert len(uvicorn_calls) == 1
+
+
+def test_serve_stops_when_only_the_file_is_missing(uvicorn_calls, tmp_path, capsys):
+    (tmp_path / "info").mkdir()
+    assert web.main([]) == 1
+    err = capsys.readouterr().err
+    assert uvicorn_calls == [] and "info/library.yaml" in err
+
+
+def test_serve_reports_inputs_it_cannot_create(uvicorn_calls, tmp_path, capsys):
+    (tmp_path / "info").write_text("")
+    assert web.main([]) == 1
+    assert uvicorn_calls == [] and "error:" in capsys.readouterr().err

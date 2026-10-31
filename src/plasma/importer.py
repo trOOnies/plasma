@@ -21,6 +21,8 @@ from plasma import library
 from plasma.db import connect
 from plasma.models import ImportEntry, Kind, describe_errors
 
+INFO_DIR = Path("info")
+REQUIRED_FILES = ("library.yaml",)
 SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES}
 
 
@@ -32,11 +34,37 @@ class ImportFileError(Exception):
         self.problems = problems
 
 
+class InputsCreatedError(Exception):
+    """Required inputs were missing and have been created empty."""
+
+    def __init__(self, created: list[Path]):
+        names = ", ".join(str(path) for path in created)
+        super().__init__(
+            f"Required input was missing, so it was created empty: {names}. "
+            "Add your movies and series, run `make import`, then start the app again."
+        )
+        self.created = created
+
+
 @dataclass
 class ImportResult:
     added: int = 0
     updated: int = 0
     unchanged: int = 0
+
+
+def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
+    """Create any missing required folder or file, empty. Returns what was created."""
+    created = []
+    if not directory.exists():
+        directory.mkdir(parents=True)
+        created.append(directory)
+    for name in REQUIRED_FILES:
+        path = directory / name
+        if not path.exists():
+            path.touch()
+            created.append(path)
+    return created
 
 
 def parse_file(path: Path) -> list[ImportEntry]:
@@ -113,13 +141,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("directory", type=Path, help="folder holding the YAML files")
     args = parser.parse_args(argv)
 
-    if not args.directory.is_dir():
-        print(f"error: {args.directory} is not a folder", file=sys.stderr)
+    try:
+        created = ensure_inputs(args.directory)
+    except OSError as error:
+        print(f"error: {error}", file=sys.stderr)
         return 1
+    for path in created:
+        print(f"Created {path}, which was missing.")
     paths = yaml_files(args.directory)
-    if not paths:
-        print(f"No .yaml or .yml files in {args.directory}, nothing to import.")
-        return 0
 
     conn = connect()
     try:

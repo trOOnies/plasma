@@ -149,11 +149,35 @@ def test_main_reports_errors(tmp_path, db_path, monkeypatch, capsys):
     assert "rating" in err and "Nothing was imported" in err
 
 
-def test_main_with_empty_or_missing_folder(tmp_path, db_path, monkeypatch, capsys):
+def test_ensure_inputs_creates_a_missing_folder_and_files_empty(tmp_path):
+    info = tmp_path / "nested" / "info"
+    assert importer.ensure_inputs(info) == [info, info / "library.yaml"]
+    assert (info / "library.yaml").read_text() == ""
+
+
+def test_ensure_inputs_creates_a_missing_file_in_an_existing_folder(tmp_path):
+    assert importer.ensure_inputs(tmp_path) == [tmp_path / "library.yaml"]
+
+
+def test_ensure_inputs_leaves_existing_files_alone(tmp_path):
+    path = write(tmp_path, "movies:\n  - name: Film\n")
+    assert importer.ensure_inputs(tmp_path) == []
+    assert path.read_text() == "movies:\n  - name: Film\n"
+
+
+def test_main_creates_missing_inputs_and_imports_nothing(tmp_path, db_path, monkeypatch, capsys):
     monkeypatch.setenv("PLASMA_DB", str(db_path))
-    assert importer.main([str(tmp_path)]) == 0
-    assert "nothing to import" in capsys.readouterr().out
-    assert importer.main([str(tmp_path / "missing")]) == 1
+    info = tmp_path / "info"
+    assert importer.main([str(info)]) == 0
+    out = capsys.readouterr().out
+    assert f"Created {info / 'library.yaml'}" in out and "0 added" in out
+
+
+def test_main_when_the_folder_path_is_a_file(tmp_path, db_path, monkeypatch, capsys):
+    monkeypatch.setenv("PLASMA_DB", str(db_path))
+    not_a_folder = write(tmp_path, "", "info")
+    assert importer.main([str(not_a_folder)]) == 1
+    assert "error:" in capsys.readouterr().err
 
 
 def test_seed_loads_demo_file_and_is_repeatable(conn, db_path, monkeypatch, capsys):

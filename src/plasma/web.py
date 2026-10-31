@@ -2,6 +2,7 @@
 
 import argparse
 import sqlite3
+import sys
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
@@ -16,6 +17,7 @@ from pydantic import BeforeValidator, ValidationError
 
 from plasma import library
 from plasma.db import connect
+from plasma.importer import InputsCreatedError, ensure_inputs
 from plasma.models import Kind, Status, TitleInput, describe_errors
 
 PACKAGE_DIR = Path(__file__).parent
@@ -235,12 +237,21 @@ def create_app(db_path: Path | str | None = None) -> FastAPI:
     return app
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Plasma web app.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true", help="restart when the code changes")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    try:
+        created = ensure_inputs()
+        if created:
+            raise InputsCreatedError(created)
+    except (InputsCreatedError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
     uvicorn.run(
         "plasma.web:create_app",
         factory=True,
@@ -249,7 +260,8 @@ def main() -> None:
         reload=args.reload,
         reload_dirs=[str(PACKAGE_DIR)] if args.reload else None,
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
