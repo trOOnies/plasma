@@ -13,7 +13,7 @@ def write(directory: Path, text: str, name: str = "library.yaml") -> Path:
 
 
 FILE = """
-movies:
+movie:
   - name: 1917
     year: 2019
     status: completed
@@ -44,7 +44,7 @@ def test_import_creates_titles_with_progress(conn, tmp_path):
 
 
 def test_imported_movie_without_date_stays_undated(conn, tmp_path):
-    path = write(tmp_path, "movies:\n  - name: Film\n    status: completed\n")
+    path = write(tmp_path, "movie:\n  - name: Film\n    status: completed\n")
     importer.import_paths(conn, [path])
     assert library.find_title(conn, Kind.MOVIE, "Film", None)["watched_on"] is None
 
@@ -88,26 +88,26 @@ def test_reimport_never_removes_episodes(conn, tmp_path):
 
 
 def test_reimport_fills_blank_rating_and_notes(conn, tmp_path):
-    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
-    rated = write(tmp_path, "movies:\n  - name: Film\n    rating: 7\n    notes: Nice\n", "b.yaml")
+    importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n")])
+    rated = write(tmp_path, "movie:\n  - name: Film\n    rating: 7\n    notes: Nice\n", "b.yaml")
     assert importer.import_paths(conn, [rated]).updated == 1
     film = library.find_title(conn, Kind.MOVIE, "Film", None)
     assert (film["rating"], film["notes"]) == (7, "Nice")
 
 
 def test_reimport_fills_a_blank_description_but_keeps_an_existing_one(conn, tmp_path):
-    text = "movies:\n  - name: Film\n    description: {}\n"
-    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
+    text = "movie:\n  - name: Film\n    description: {}\n"
+    importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n")])
     assert importer.import_paths(conn, [write(tmp_path, text.format("First"))]).updated == 1
     assert importer.import_paths(conn, [write(tmp_path, text.format("Second"))]).updated == 0
     assert library.find_title(conn, Kind.MOVIE, "Film", None)["description"] == "First"
 
 
 def test_image_is_imported_and_can_be_replaced(conn, tmp_path):
-    (tmp_path / "images").mkdir()
-    (tmp_path / "images" / "a.jpg").touch()
-    (tmp_path / "images" / "b.jpg").touch()
-    text = "movies:\n  - name: Film\n    image: {}\n"
+    (tmp_path / "images" / "movie").mkdir(parents=True)
+    (tmp_path / "images" / "movie" / "a.jpg").touch()
+    (tmp_path / "images" / "movie" / "b.jpg").touch()
+    text = "movie:\n  - name: Film\n    image: {}\n"
     importer.import_paths(conn, [write(tmp_path, text.format("a.jpg"))])
     assert library.find_title(conn, Kind.MOVIE, "Film", None)["image"] == "a.jpg"
     assert importer.import_paths(conn, [write(tmp_path, text.format("b.jpg"))]).updated == 1
@@ -115,23 +115,23 @@ def test_image_is_imported_and_can_be_replaced(conn, tmp_path):
 
 
 def test_reimport_without_an_image_keeps_the_current_one(conn, tmp_path):
-    (tmp_path / "images").mkdir()
-    (tmp_path / "images" / "a.jpg").touch()
-    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n    image: a.jpg\n")])
-    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
+    (tmp_path / "images" / "movie").mkdir(parents=True)
+    (tmp_path / "images" / "movie" / "a.jpg").touch()
+    importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n    image: a.jpg\n")])
+    importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n")])
     assert library.find_title(conn, Kind.MOVIE, "Film", None)["image"] == "a.jpg"
 
 
 def test_missing_image_file_is_reported_and_nothing_is_written(conn, tmp_path):
-    path = write(tmp_path, "movies:\n  - name: Film\n    image: gone.jpg\n")
-    with pytest.raises(importer.ImportFileError, match=r"movies\[0\]: image: .*gone.jpg"):
+    path = write(tmp_path, "movie:\n  - name: Film\n    image: gone.jpg\n")
+    with pytest.raises(importer.ImportFileError, match=r"movie\[0\]: image: .*gone.jpg"):
         importer.import_paths(conn, [path])
     assert library.list_titles(conn) == []
 
 
 def test_duration_and_episode_details_are_imported(conn, tmp_path):
     text = """
-movies:
+movie:
   - name: Film
     duration: 120
 series:
@@ -183,7 +183,7 @@ series:
 
 def test_release_dates_and_platforms_are_imported(conn, tmp_path):
     text = """
-movies:
+movie:
   - name: Film
     release_date: 2026-11-20
     platforms: [Netflix, Hulu]
@@ -203,8 +203,8 @@ series:
 
 
 def test_reimport_fills_in_a_release_date_and_platforms(conn, tmp_path):
-    importer.import_paths(conn, [write(tmp_path, "movies:\n  - name: Film\n")])
-    text = "movies:\n  - name: Film\n    release_date: 2026-11-20\n    platforms: [Netflix]\n"
+    importer.import_paths(conn, [write(tmp_path, "movie:\n  - name: Film\n")])
+    text = "movie:\n  - name: Film\n    release_date: 2026-11-20\n    platforms: [Netflix]\n"
     assert importer.import_paths(conn, [write(tmp_path, text)]).updated == 1
     film = library.find_title(conn, Kind.MOVIE, "Film", None)
     assert film["release_date"] == "2026-11-20"
@@ -213,7 +213,7 @@ def test_reimport_fills_in_a_release_date_and_platforms(conn, tmp_path):
 
 
 def test_reimport_keeps_platforms_changed_in_the_app(conn, tmp_path):
-    text = "movies:\n  - name: Film\n    platforms: [Netflix, Hulu]\n"
+    text = "movie:\n  - name: Film\n    platforms: [Netflix, Hulu]\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     film = library.find_title(conn, Kind.MOVIE, "Film", None)
     hulu = library.title_platforms(conn, film["id"])[0]["id"]
@@ -224,7 +224,7 @@ def test_reimport_keeps_platforms_changed_in_the_app(conn, tmp_path):
 
 def test_games_are_imported(conn, tmp_path):
     text = """
-games:
+game:
   - name: Hades
     year: 2020
     status: playing
@@ -243,25 +243,25 @@ games:
 
 
 def test_reimport_fills_in_hours_played_but_keeps_app_changes(conn, tmp_path):
-    importer.import_paths(conn, [write(tmp_path, "games:\n  - name: Hades\n")])
-    text = "games:\n  - name: Hades\n    hours_played: {}\n"
+    importer.import_paths(conn, [write(tmp_path, "game:\n  - name: Hades\n")])
+    text = "game:\n  - name: Hades\n    hours_played: {}\n"
     assert importer.import_paths(conn, [write(tmp_path, text.format(10))]).updated == 1
     assert importer.import_paths(conn, [write(tmp_path, text.format(99))]).unchanged == 1
     assert library.find_title(conn, Kind.GAME, "Hades", None)["hours_played"] == 10
 
 
 def test_game_with_seasons_is_reported(conn, tmp_path):
-    path = write(tmp_path, "games:\n  - name: Hades\n    seasons: [3]\n")
-    with pytest.raises(importer.ImportFileError, match=r"games\[0\]"):
+    path = write(tmp_path, "game:\n  - name: Hades\n    seasons: [3]\n")
+    with pytest.raises(importer.ImportFileError, match=r"game\[0\]"):
         importer.import_paths(conn, [path])
 
 
 def test_producer_and_owned_are_imported(conn, tmp_path):
     text = """
-movies:
+movie:
   - name: Film
     producer: A24
-games:
+game:
   - name: Hades
     producer: Supergiant Games
     owned: true
@@ -275,7 +275,7 @@ games:
 
 
 def test_reimport_fills_a_blank_producer_but_keeps_owned_changes(conn, tmp_path):
-    text = "games:\n  - name: Hades\n    owned: true\n"
+    text = "game:\n  - name: Hades\n    owned: true\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     hades = library.find_title(conn, Kind.GAME, "Hades", None)
     library.toggle_owned(conn, hades["id"])
@@ -288,21 +288,21 @@ def test_reimport_fills_a_blank_producer_but_keeps_owned_changes(conn, tmp_path)
 
 
 def test_owned_on_a_movie_is_reported(conn, tmp_path):
-    path = write(tmp_path, "movies:\n  - name: Film\n    owned: true\n")
+    path = write(tmp_path, "movie:\n  - name: Film\n    owned: true\n")
     with pytest.raises(importer.ImportFileError, match="owned only applies to games"):
         importer.import_paths(conn, [path])
 
 
 def test_imported_titles_have_no_status_unless_given_one(conn, tmp_path):
-    text = "movies:\n  - name: A\n  - name: B\n    status: planned\n"
+    text = "movie:\n  - name: A\n  - name: B\n    status: planned\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     assert library.find_title(conn, Kind.MOVIE, "A", None)["status"] == "none"
     assert library.find_title(conn, Kind.MOVIE, "B", None)["status"] == "planned"
 
 
 def test_same_title_in_two_files_imports_once(conn, tmp_path):
-    first = write(tmp_path, "movies:\n  - name: Film\n", "a.yaml")
-    second = write(tmp_path, "movies:\n  - name: film\n", "b.yaml")
+    first = write(tmp_path, "movie:\n  - name: Film\n", "a.yaml")
+    second = write(tmp_path, "movie:\n  - name: film\n", "b.yaml")
     result = importer.import_paths(conn, [first, second])
     assert (result.added, result.unchanged) == (1, 1)
 
@@ -313,10 +313,10 @@ def test_same_title_in_two_files_imports_once(conn, tmp_path):
         ("movies: [", "invalid YAML"),
         ("- name: Film\n", "top level"),
         ("films:\n  - name: Film\n", "top level"),
-        ("movies: Film\n", "must be a list"),
-        ("movies:\n  - Film\n", "expected a mapping"),
-        ("movies:\n  - year: 2000\n", "movies[0]: name"),
-        ("movies:\n  - name: Film\n    rating: 11\n", "movies[0]: rating"),
+        ("movie: Film\n", "must be a list"),
+        ("movie:\n  - Film\n", "expected a mapping"),
+        ("movie:\n  - year: 2000\n", "movie[0]: name"),
+        ("movie:\n  - name: Film\n    rating: 11\n", "movie[0]: rating"),
         ("series:\n  - name: Show\n    seasons: [2]\n    watched_through: S09E01\n", "series[0]"),
     ],
 )
@@ -326,8 +326,8 @@ def test_bad_input_is_reported(conn, tmp_path, text, message):
 
 
 def test_one_bad_file_means_nothing_is_written(conn, tmp_path):
-    good = write(tmp_path, "movies:\n  - name: Film\n", "a.yaml")
-    bad = write(tmp_path, "movies:\n  - name: Other\n    rating: 99\n", "b.yaml")
+    good = write(tmp_path, "movie:\n  - name: Film\n", "a.yaml")
+    bad = write(tmp_path, "movie:\n  - name: Other\n    rating: 99\n", "b.yaml")
     with pytest.raises(importer.ImportFileError):
         importer.import_paths(conn, [good, bad])
     assert library.list_titles(conn) == []
@@ -339,39 +339,60 @@ def test_empty_file_is_fine(conn, tmp_path):
 
 def test_main_reads_yaml_files_from_a_folder(tmp_path, db_path, monkeypatch, capsys):
     monkeypatch.setenv("PLASMA_DB", str(db_path))
-    write(tmp_path, "movies:\n  - name: A\n", "a.yaml")
-    write(tmp_path, "movies:\n  - name: B\n", "b.yml")
-    write(tmp_path, "movies:\n  - name: C\n", "notes.txt")
+    write(tmp_path, "movie:\n  - name: A\n", "a.yaml")
+    write(tmp_path, "movie:\n  - name: B\n", "b.yml")
+    write(tmp_path, "movie:\n  - name: C\n", "notes.txt")
     assert importer.main([str(tmp_path)]) == 0
     assert "2 added" in capsys.readouterr().out
 
 
 def test_main_reports_errors(tmp_path, db_path, monkeypatch, capsys):
     monkeypatch.setenv("PLASMA_DB", str(db_path))
-    write(tmp_path, "movies:\n  - name: A\n    rating: 99\n")
+    write(tmp_path, "movie:\n  - name: A\n    rating: 99\n")
     assert importer.main([str(tmp_path)]) == 1
     err = capsys.readouterr().err
     assert "rating" in err and "Nothing was imported" in err
 
 
+def full_layout(tmp_path):
+    for folder in ("movie", "series", "game", "platform"):
+        (tmp_path / "images" / folder).mkdir(parents=True)
+    for name in ("movie", "series", "game", "platform"):
+        (tmp_path / f"{name}.yaml").touch()
+
+
 def test_ensure_inputs_creates_a_missing_folder_and_files_empty(tmp_path):
     info = tmp_path / "nested" / "info"
-    assert importer.ensure_inputs(info) == [info, info / "images", info / "library.yaml"]
-    assert (info / "library.yaml").read_text() == ""
+    images = info / "images"
+    assert importer.ensure_inputs(info) == [
+        info,
+        images,
+        images / "movie",
+        images / "series",
+        images / "game",
+        images / "platform",
+        info / "movie.yaml",
+        info / "series.yaml",
+        info / "game.yaml",
+        info / "platform.yaml",
+    ]
+    assert (info / "platform.yaml").read_text() == ""
 
 
 def test_ensure_inputs_only_creates_what_is_missing(tmp_path):
-    (tmp_path / "images").mkdir()
-    assert importer.ensure_inputs(tmp_path) == [tmp_path / "library.yaml"]
-    (tmp_path / "images").rmdir()
-    assert importer.ensure_inputs(tmp_path) == [tmp_path / "images"]
+    full_layout(tmp_path)
+    assert importer.ensure_inputs(tmp_path) == []
+    (tmp_path / "game.yaml").unlink()
+    (tmp_path / "images" / "series").rmdir()
+    created = [tmp_path / "images" / "series", tmp_path / "game.yaml"]
+    assert importer.ensure_inputs(tmp_path) == created
 
 
 def test_ensure_inputs_leaves_existing_files_alone(tmp_path):
-    (tmp_path / "images").mkdir()
-    path = write(tmp_path, "movies:\n  - name: Film\n")
+    full_layout(tmp_path)
+    path = write(tmp_path, "movie:\n  - name: Film\n", "movie.yaml")
     assert importer.ensure_inputs(tmp_path) == []
-    assert path.read_text() == "movies:\n  - name: Film\n"
+    assert path.read_text() == "movie:\n  - name: Film\n"
 
 
 def test_main_creates_missing_inputs_and_imports_nothing(tmp_path, db_path, monkeypatch, capsys):
@@ -379,7 +400,7 @@ def test_main_creates_missing_inputs_and_imports_nothing(tmp_path, db_path, monk
     info = tmp_path / "info"
     assert importer.main([str(info)]) == 0
     out = capsys.readouterr().out
-    assert f"Created {info / 'library.yaml'}" in out and "0 added" in out
+    assert f"Created {info / 'platform.yaml'}" in out and "0 added" in out
 
 
 def test_main_when_the_folder_path_is_a_file(tmp_path, db_path, monkeypatch, capsys):
@@ -402,18 +423,18 @@ def test_seed_loads_demo_file_and_is_repeatable(conn, db_path, monkeypatch, caps
 
 
 def test_platforms_list_adds_platforms_no_title_uses(conn, tmp_path):
-    text = "platforms:\n  - name: Netflix\n    url: https://www.netflix.com\n  - name: Wii\n"
+    text = "streaming_service:\n  - name: Netflix\n    url: https://netflix.com\n  - name: Wii\n"
     result = importer.import_paths(conn, [write(tmp_path, text)])
     assert result.platforms_added == 2 and result.added == 0
     platforms = {row["name"]: row["url"] for row in library.list_platforms(conn)}
-    assert platforms == {"Netflix": "https://www.netflix.com", "Wii": ""}
+    assert platforms == {"Netflix": "https://netflix.com", "Wii": ""}
 
 
 def test_platforms_list_fills_blank_urls_and_keeps_the_rest(conn, tmp_path):
-    first = "platforms:\n  - name: Steam\n  - name: Netflix\n    url: https://old.example\n"
+    first = "streaming_service:\n  - name: Steam\n  - name: Netflix\n    url: https://old.example\n"
     importer.import_paths(conn, [write(tmp_path, first)])
     second = (
-        "platforms:\n  - name: steam\n    url: https://store.steampowered.com\n"
+        "streaming_service:\n  - name: steam\n    url: https://store.steampowered.com\n"
         "  - name: Netflix\n    url: https://new.example\n"
     )
     assert importer.import_paths(conn, [write(tmp_path, second)]).platforms_added == 0
@@ -423,8 +444,8 @@ def test_platforms_list_fills_blank_urls_and_keeps_the_rest(conn, tmp_path):
 
 def test_platforms_list_and_titles_share_platforms(conn, tmp_path):
     text = (
-        "platforms:\n  - name: Steam\n    url: https://store.steampowered.com\n"
-        "games:\n  - name: Hades\n    platforms: [Steam]\n"
+        "streaming_service:\n  - name: Steam\n    url: https://store.steampowered.com\n"
+        "game:\n  - name: Hades\n    platforms: [Steam]\n"
     )
     importer.import_paths(conn, [write(tmp_path, text)])
     [platform] = library.list_platforms(conn)
@@ -434,11 +455,17 @@ def test_platforms_list_and_titles_share_platforms(conn, tmp_path):
 @pytest.mark.parametrize(
     "text, message",
     [
-        ("platforms: Netflix\n", "'platforms' must be a list"),
-        ("platforms:\n  - Netflix\n", r"platforms\[0\]: expected a mapping"),
-        ("platforms:\n  - url: https://example.com\n", r"platforms\[0\]: name"),
-        ("platforms:\n  - name: Bad\n    url: javascript:alert(1)\n", r"platforms\[0\]: url"),
-        ("platforms:\n  - name: Bad\n    colour: red\n", r"platforms\[0\]: colour"),
+        ("streaming_service: Netflix\n", "'streaming_service' must be a list"),
+        ("streaming_service:\n  - Netflix\n", r"streaming_service\[0\]: expected a mapping"),
+        ("streaming_service:\n  - url: https://example.com\n", r"streaming_service\[0\]: name"),
+        (
+            "streaming_service:\n  - name: Bad\n    url: javascript:alert(1)\n",
+            r"streaming_service\[0\]: url",
+        ),
+        (
+            "streaming_service:\n  - name: Bad\n    colour: red\n",
+            r"streaming_service\[0\]: colour",
+        ),
     ],
 )
 def test_bad_platforms_are_reported(conn, tmp_path, text, message):
@@ -449,7 +476,7 @@ def test_bad_platforms_are_reported(conn, tmp_path, text, message):
 
 def test_main_reports_new_platforms(conn, tmp_path, monkeypatch, capsys, db_path):
     monkeypatch.setenv("PLASMA_DB", str(db_path))
-    write(tmp_path, "platforms:\n  - name: Wii\n")
+    write(tmp_path, "streaming_service:\n  - name: Wii\n")
     assert importer.main([str(tmp_path)]) == 0
     assert "1 new platform(s)" in capsys.readouterr().out
 
@@ -458,7 +485,7 @@ def test_import_reads_game_modes_genres_and_age(conn, tmp_path):
     path = write(
         tmp_path,
         """
-games:
+game:
   - name: Hades
     singleplayer: false
     multiplayer: true
@@ -479,7 +506,7 @@ def test_import_rejects_a_completed_multiplayer(conn, tmp_path):
     path = write(
         tmp_path,
         """
-games:
+game:
   - name: Hades
     multiplayer: true
     multiplayer_status: completed
@@ -490,9 +517,9 @@ games:
 
 
 def test_reimport_fills_new_details_on_an_existing_game(conn, tmp_path):
-    importer.import_paths(conn, [write(tmp_path, "games:\n  - name: Hades\n")])
+    importer.import_paths(conn, [write(tmp_path, "game:\n  - name: Hades\n")])
     text = """
-games:
+game:
   - name: Hades
     multiplayer: true
     multiplayer_status: planned
@@ -508,7 +535,7 @@ games:
 
 
 def test_reimport_does_not_undo_a_choice_made_in_the_app(conn, tmp_path):
-    text = "games:\n  - name: Hades\n    multiplayer: true\n"
+    text = "game:\n  - name: Hades\n    multiplayer: true\n"
     importer.import_paths(conn, [write(tmp_path, text)])
     title = library.list_titles(conn)[0]
     data = TitleInput(kind="game", name="Hades", multiplayer=False)
@@ -517,14 +544,60 @@ def test_reimport_does_not_undo_a_choice_made_in_the_app(conn, tmp_path):
     assert library.list_titles(conn)[0]["multiplayer"] == 0
 
 
-def test_import_reads_or_guesses_platform_kinds(conn, tmp_path):
+def test_platform_sections_set_the_kind(conn, tmp_path):
     text = """
-platforms:
+streaming_service:
   - name: Netflix
-  - name: Steam
+game_console:
   - name: Cloud Thing
-    kind: console
 """
-    importer.import_paths(conn, [write(tmp_path, text)])
+    importer.import_paths(conn, [write(tmp_path, text, "platform.yaml")])
     kinds = {p["name"]: p["kind"] for p in library.list_platforms(conn)}
-    assert kinds == {"Netflix": "streaming", "Steam": "console", "Cloud Thing": "console"}
+    assert kinds == {"Netflix": "streaming", "Cloud Thing": "console"}
+
+
+def test_files_are_split_by_section(conn, tmp_path):
+    paths = [
+        write(tmp_path, "movie:\n  - name: Film\n", "movie.yaml"),
+        write(tmp_path, "series:\n  - name: Show\n", "series.yaml"),
+        write(tmp_path, "game:\n  - name: Play\n", "game.yaml"),
+    ]
+    assert importer.import_paths(conn, paths).added == 3
+
+
+@pytest.mark.parametrize("section", ["movies", "games", "platforms"])
+def test_old_section_names_are_rejected(conn, tmp_path, section):
+    path = write(tmp_path, f"{section}:\n  - name: Old\n")
+    with pytest.raises(importer.ImportFileError, match="top level"):
+        importer.import_paths(conn, [path])
+
+
+def test_image_must_be_in_the_folder_of_its_kind(conn, tmp_path):
+    (tmp_path / "images" / "game").mkdir(parents=True)
+    (tmp_path / "images" / "movie").mkdir()
+    (tmp_path / "images" / "game" / "a.jpg").touch()
+    path = write(tmp_path, "movie:\n  - name: Film\n    image: a.jpg\n")
+    with pytest.raises(importer.ImportFileError, match="does not exist"):
+        importer.import_paths(conn, [path])
+    (tmp_path / "images" / "movie" / "a.jpg").touch()
+    assert importer.import_paths(conn, [path]).added == 1
+
+
+def test_platform_image_is_checked_and_applied(conn, tmp_path):
+    (tmp_path / "images" / "platform").mkdir(parents=True)
+    text = "streaming_service:\n  - name: Netflix\n    image: n.png\n"
+    path = write(tmp_path, text, "platform.yaml")
+    with pytest.raises(importer.ImportFileError, match="does not exist"):
+        importer.import_paths(conn, [path])
+    (tmp_path / "images" / "platform" / "n.png").touch()
+    importer.import_paths(conn, [path])
+    assert library.list_platforms(conn)[0]["image"] == "n.png"
+
+
+def test_reimport_replaces_a_platform_image(conn, tmp_path):
+    (tmp_path / "images" / "platform").mkdir(parents=True)
+    (tmp_path / "images" / "platform" / "n.png").touch()
+    importer.import_paths(conn, [write(tmp_path, "streaming_service:\n  - name: Netflix\n")])
+    text = "streaming_service:\n  - name: Netflix\n    image: n.png\n"
+    importer.import_paths(conn, [write(tmp_path, text)])
+    assert library.list_platforms(conn)[0]["image"] == "n.png"

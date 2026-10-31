@@ -751,7 +751,7 @@ def test_genres_and_age_restriction_filter_the_library(conn):
 
 def test_platforms_split_by_kind(conn):
     library.create_platform(conn, PlatformInput(name="Netflix"))
-    library.create_platform(conn, PlatformInput(name="Xbox One"))
+    library.create_platform(conn, PlatformInput(name="Xbox One", kind="console"))
     library.create_platform(conn, PlatformInput(name="Odd", kind="console"))
     groups = library.platforms_by_kind(conn)
     assert [p["name"] for p in groups[PlatformKind.STREAMING]] == ["Netflix"]

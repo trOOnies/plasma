@@ -8,7 +8,7 @@ from plasma.models import PlatformKind, guess_platform_kind
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
         CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS platforms (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
     url TEXT NOT NULL DEFAULT '',
-    kind {PLATFORM_KIND_COLUMN}
+    kind {PLATFORM_KIND_COLUMN},
+    image TEXT
 );
 
 CREATE TABLE IF NOT EXISTS title_platforms (
@@ -112,6 +113,7 @@ ADDED_COLUMNS = {
     },
     "platforms": {
         "kind": PLATFORM_KIND_COLUMN,
+        "image": "TEXT",
     },
     "episodes": {
         "duration": "INTEGER",

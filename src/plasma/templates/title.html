@@ -4,7 +4,7 @@
 {% block content %}
 <div class="title-layout{% if title.image %} has-poster{% endif %}">
   {% if title.image %}
-  <img class="poster" src="/images/{{ title.image | urlencode }}" alt="{{ title.name }}">
+  <img class="poster" src="/images/{{ title.kind }}/{{ title.image | urlencode }}" alt="{{ title.name }}">
   {% endif %}
   <div class="title-main">
     <div class="title-head">

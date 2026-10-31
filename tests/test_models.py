@@ -9,6 +9,7 @@ from plasma.models import (
     PlatformInput,
     Status,
     TitleInput,
+    guess_platform_kind,
 )
 
 
@@ -282,10 +283,10 @@ def test_age_restriction_rejected():
     ],
 )
 def test_platform_kind_is_guessed_from_the_name(name, kind):
-    assert PlatformInput(name=name).kind.value == kind
+    assert guess_platform_kind(name).value == kind
 
 
 def test_platform_kind_can_be_stated():
-    assert PlatformInput(name="Xbox Cloud", kind="streaming").kind.value == "streaming"
+    assert PlatformInput(name="Xbox Cloud", kind="console").kind.value == "console"
     with pytest.raises(ValidationError):
         PlatformInput(name="Netflix", kind="vhs")

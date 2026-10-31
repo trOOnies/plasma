@@ -1,13 +1,13 @@
 # Demo library for `make seed`. Also a reference for writing your own files in info/.
 
-platforms:
+streaming_service:
   - name: HBO Max
     url: https://www.hbomax.com
-    kind: streaming       # Or console. Guessed from the name if left out.
-  - name: PlayStation 5   # A website is optional.
-    kind: console
 
-movies:
+game_console:
+  - name: PlayStation 5   # A website is optional.
+
+movie:
   - name: Arrival
     year: 2016
     producer: FilmNation Entertainment
@@ -67,7 +67,7 @@ series:
     year: 2022
     seasons: [8, 10, 10]
 
-games:
+game:
   - name: Hades
     year: 2020
     producer: Supergiant Games

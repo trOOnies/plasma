@@ -126,21 +126,24 @@
   <section class="help-section" id="platforms">
     <h2>📡 Where to watch</h2>
     <p>Add your streaming platforms and game consoles on the <a href="/platforms">Platforms</a> tab, then tick them when you edit a title. Series and movies offer streaming platforms, and games offer consoles. Each platform has a page listing everything you've got on it. 🎉</p>
-    <p>Got a long list? Put it under <code>platforms:</code> in <code>info/library.yaml</code> and run <code>make import</code>.</p>
+    <p>Got a long list? Put it under <code>streaming_service:</code> or <code>game_console:</code> in <code>info/platform.yaml</code> and run <code>make import</code>.</p>
   </section>
 
   <section class="help-section" id="import">
     <h2>📥 Adding lots of titles at once</h2>
-    <p>List your titles in <code>info/library.yaml</code> and run <code>make import</code>.</p>
+    <p>List your titles in <code>info/movie.yaml</code>, <code>info/series.yaml</code> and <code>info/game.yaml</code>, then run <code>make import</code>.</p>
     <details class="help-details">
       <summary>📄 Show me an example</summary>
-      <pre><code>platforms:
+      <pre><code># platform.yaml
+streaming_service:
   - name: Netflix
     url: https://www.netflix.com
+    image: netflix.png
+game_console:
   - name: PlayStation 5
-    kind: console
 
-movies:
+# movie.yaml
+movie:
   - name: Arrival
     year: 2016
     status: completed
@@ -154,6 +157,7 @@ movies:
     notes: Worth a rewatch.
     image: arrival.jpg
 
+# series.yaml
 series:
   - name: The Wire
     year: 2002
@@ -165,7 +169,8 @@ series:
         release_date: 2002-06-02
         description: The first episode.
 
-games:
+# game.yaml
+game:
   - name: Hades
     year: 2020
     producer: Supergiant Games
@@ -179,8 +184,8 @@ games:
     <p class="help-tip">👍 Importing again is safe. It won't undo anything you changed here, and only fills in what's still blank.</p>
     <h3>🖼️ Adding images</h3>
     <ol class="help-steps">
-      <li>Drop a JPG, PNG, WebP, GIF or AVIF into <code>info/images/</code>.</li>
-      <li>Add its file name to the title, such as <code>image: arrival.jpg</code>.</li>
+      <li>Drop a JPG, PNG, WebP, GIF or AVIF into the matching folder: <code>info/images/movie/</code>, <code>series/</code>, <code>game/</code> or <code>platform/</code>.</li>
+      <li>Add its file name to the title or platform, such as <code>image: arrival.jpg</code>.</li>
       <li>Run <code>make import</code>. Ta-da! ✨</li>
     </ol>
   </section>

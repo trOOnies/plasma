@@ -13,7 +13,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Keep a duration, release date and description for every movie and episode.
 - See what's upcoming and what just came out on the home page.
 - Keep one central list of platforms, split into Streaming Platforms and Game Consoles, and record where each title can be watched or played.
-- Mark favorites, which go to the top of their tab, and show an image on each title's page.
+- Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
 - Load your titles from YAML files in `info/`.
 
 The app's Help tab explains how to use it.
@@ -57,19 +57,36 @@ Both of these folders are gitignored:
 
 ### Files in `info/`
 
-The app needs the `info/` folder, an `info/images/` folder and an `info/library.yaml` file. If any of them is missing, `make serve` and `make import` create it empty. `make serve` then stops with an error explaining why, so add your titles, run `make import` and start it again. An empty `library.yaml` is valid, so the next `make serve` starts normally.
+The app needs this layout:
 
-Every `.yaml` or `.yml` file in `info/` is imported. Each one can have `platforms`, `movies`, `series` and `games` lists, in any combination:
+```
+info/
+  movie.yaml
+  series.yaml
+  game.yaml
+  platform.yaml
+  images/
+    movie/
+    series/
+    game/
+    platform/
+```
+
+If any of these is missing, `make serve` and `make import` create it empty. `make serve` then stops with an error explaining why, so add your titles, run `make import` and start it again. An empty YAML file is valid, so the next `make serve` starts normally.
+
+Every `.yaml` or `.yml` file in `info/` is imported, and each one can hold any of the `streaming_service`, `game_console`, `movie`, `series` and `game` lists:
 
 ```yaml
-platforms:
+# platform.yaml
+streaming_service:
   - name: Netflix                  # Required.
     url: https://www.netflix.com   # Optional. Must start with http:// or https://.
-    kind: streaming                # streaming or console. Guessed from the name if left out.
+    image: netflix.png             # A file in info/images/platform/.
+game_console:
   - name: PlayStation 5
-    kind: console
 
-movies:
+# movie.yaml
+movie:
   - name: Arrival          # Required.
     year: 2016
     producer: FilmNation Entertainment
@@ -83,8 +100,9 @@ movies:
     watched_on: 2024-03-02
     description: A linguist is asked to talk to the aliens who have just landed.
     notes: Worth a rewatch.        # Your own thoughts.
-    image: arrival.jpg             # A file in info/images/.
+    image: arrival.jpg             # A file in info/images/movie/.
 
+# series.yaml
 series:
   - name: The Wire
     year: 2002
@@ -100,7 +118,8 @@ series:
     seasons: [7, 13, 13, 13, 16]
     status: completed               # Marks every episode watched.
 
-games:
+# game.yaml
+game:
   - name: Hades
     year: 2020
     singleplayer: true              # The default.
@@ -121,7 +140,7 @@ The home page's Upcoming section shows releases in the next 90 days, and Just re
 
 Titles are matched by kind, name (ignoring case) and year, so two films can share a name if their years differ.
 
-If any entry is invalid, the import lists every problem and writes nothing. That includes an `image` file that isn't in `info/images/`.
+If any entry is invalid, the import lists every problem and writes nothing. That includes an `image` file that isn't in the matching folder, such as `info/images/game/` for a game.
 
 Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
@@ -132,7 +151,7 @@ Importing is safe to repeat. Status, watch dates, progress and `owned` are read 
 A repeat import does these things and nothing else:
 
 - Adds new titles.
-- Adds new platforms, and fills in a platform's blank `url`.
+- Adds new platforms, fills in a platform's blank `url` and sets its `image`. A platform that already exists keeps its type, which you can change on its page.
 - Adds episodes for longer `seasons` lists. A completed series goes back to watching.
 - Fills in a rating, age restriction, duration, hours played, producer, release date, description, notes, genres or platforms that are still blank, for titles and episodes.
 - Turns on `multiplayer`, with its `multiplayer_status`, for a game where neither the app nor an earlier import has set it.

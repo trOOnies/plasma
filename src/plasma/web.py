@@ -23,7 +23,13 @@ from starlette.background import BackgroundTask
 
 from plasma import library
 from plasma.db import connect
-from plasma.importer import IMAGES_FOLDER, INFO_DIR, InputsCreatedError, ensure_inputs
+from plasma.importer import (
+    IMAGE_FOLDERS,
+    IMAGES_FOLDER,
+    INFO_DIR,
+    InputsCreatedError,
+    ensure_inputs,
+)
 from plasma.models import (
     FAVORITES_PLAN_NAME,
     GAME_GENRES,
@@ -333,10 +339,10 @@ def titles(
     return templates.TemplateResponse(request, "library.html", context)
 
 
-@router.get("/images/{filename}")
-def image(request: Request, filename: str) -> Response:
-    path = request.app.state.images_dir / filename
-    if path.name != filename or not path.is_file():
+@router.get("/images/{folder}/{filename}")
+def image(request: Request, folder: str, filename: str) -> Response:
+    path = request.app.state.images_dir / folder / filename
+    if folder not in IMAGE_FOLDERS or path.name != filename or not path.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(path)
 

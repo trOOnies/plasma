@@ -242,6 +242,8 @@ h1 .kind-icon svg { width: 22px; height: 22px; }
 .plan-builtin { color: var(--favorite); font-size: 0.85rem; }
 
 .platform-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.platform-logo { display: block; max-width: 120px; max-height: 80px; margin-bottom: 8px; }
+.platform-icon { flex: none; width: 24px; height: 24px; object-fit: contain; }
 .platform-chip { padding: 2px 10px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.85rem; text-decoration: none; }
 .platform-chip:hover { border-color: var(--muted); }
 

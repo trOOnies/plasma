@@ -133,6 +133,17 @@ def guess_platform_kind(name: str) -> PlatformKind:
     return PlatformKind.CONSOLE if CONSOLE_NAME.search(name) else PlatformKind.STREAMING
 
 
+def check_image_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    path = PurePosixPath(value)
+    if path.name != value or "\\" in value:
+        raise ValueError("use a file name from the matching info/images folder, without any path")
+    if path.suffix.lower() not in IMAGE_SUFFIXES:
+        raise ValueError(f"use one of these image types: {', '.join(IMAGE_SUFFIXES)}")
+    return value
+
+
 def parse_episode_code(value: Any) -> tuple[int, int]:
     match = re.fullmatch(r"S(\d+)E(\d+)", str(value).strip(), re.IGNORECASE)
     if not match:
@@ -275,12 +286,10 @@ class PlatformInput(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     url: str = ""
-    kind: PlatformKind | None = None
+    kind: PlatformKind = PlatformKind.STREAMING
+    image: str | None = None
 
-    @model_validator(mode="after")
-    def guess_missing_kind(self) -> "PlatformInput":
-        self.kind = self.kind or guess_platform_kind(self.name)
-        return self
+    _check_image = field_validator("image")(check_image_name)
 
     @field_validator("url")
     @classmethod
@@ -338,17 +347,7 @@ class ImportEntry(TitleInput):
             return value
         return {parse_episode_code(code): details for code, details in value.items()}
 
-    @field_validator("image")
-    @classmethod
-    def check_image(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        path = PurePosixPath(value)
-        if path.name != value or "\\" in value:
-            raise ValueError("use a file name from info/images, without any folders")
-        if path.suffix.lower() not in IMAGE_SUFFIXES:
-            raise ValueError(f"use one of these image types: {', '.join(IMAGE_SUFFIXES)}")
-        return value
+    _check_image = field_validator("image")(check_image_name)
 
     @model_validator(mode="after")
     def check_episodes_are_listed(self) -> "ImportEntry":

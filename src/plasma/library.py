@@ -567,12 +567,14 @@ def create_platform(conn: sqlite3.Connection, data: PlatformInput) -> int:
 
 
 def fill_platform(conn: sqlite3.Connection, data: PlatformInput) -> bool:
-    """Add a platform, or fill in its URL if that's still blank. Returns whether it's new."""
+    """Add a platform, or fill in a blank URL and apply its image. Returns whether it's new."""
     added = conn.execute(
-        "INSERT OR IGNORE INTO platforms (name, url, kind) VALUES (?, ?, ?)",
-        (data.name, data.url, data.kind.value),
+        "INSERT OR IGNORE INTO platforms (name, url, kind, image) VALUES (?, ?, ?, ?)",
+        (data.name, data.url, data.kind.value, data.image),
     ).rowcount
     conn.execute("UPDATE platforms SET url = ? WHERE name = ? AND url = ''", (data.url, data.name))
+    if data.image:
+        conn.execute("UPDATE platforms SET image = ? WHERE name = ?", (data.image, data.name))
     return added > 0
 
 

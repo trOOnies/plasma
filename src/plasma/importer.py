@@ -5,8 +5,9 @@ time it is imported. After that the app owns them, so a re-import cannot undo an
 done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
 in a rating, age restriction, duration, hours played, producer, release date,
 description, notes, genres, platforms or multiplayer setting that are still blank, and
-apply the image, which can only be set from info/. The platforms list adds services and
-consoles that no title uses yet, and fills in any URL that is still blank.
+apply the image, which can only be set from info/. The streaming_service and game_console
+lists add platforms that no title uses yet, fill in any URL that is still blank, and apply
+the image. A platform that already exists keeps its type.
 
 The format is documented in the README, and demo.yaml is a working example.
 """
@@ -22,14 +23,19 @@ from pydantic import ValidationError
 
 from plasma import library
 from plasma.db import connect
-from plasma.models import ImportEntry, Kind, PlatformInput, describe_errors
+from plasma.models import ImportEntry, Kind, PlatformInput, PlatformKind, describe_errors
 
 INFO_DIR = Path("info")
 IMAGES_FOLDER = "images"
-REQUIRED_FOLDERS = (IMAGES_FOLDER,)
-REQUIRED_FILES = ("library.yaml",)
-SECTIONS = {"movies": Kind.MOVIE, "series": Kind.SERIES, "games": Kind.GAME}
-PLATFORMS_SECTION = "platforms"
+PLATFORM_IMAGES = "platform"
+IMAGE_FOLDERS = (*(kind.value for kind in Kind), PLATFORM_IMAGES)
+REQUIRED_FOLDERS = (IMAGES_FOLDER, *(f"{IMAGES_FOLDER}/{name}" for name in IMAGE_FOLDERS))
+REQUIRED_FILES = ("movie.yaml", "series.yaml", "game.yaml", "platform.yaml")
+SECTIONS = {"movie": Kind.MOVIE, "series": Kind.SERIES, "game": Kind.GAME}
+PLATFORM_SECTIONS = {
+    "streaming_service": PlatformKind.STREAMING,
+    "game_console": PlatformKind.CONSOLE,
+}
 
 
 class ImportFileError(Exception):
@@ -79,19 +85,33 @@ def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
     return created
 
 
-def parse_platforms(path: Path, items: object) -> tuple[list[PlatformInput], list[str]]:
+def missing_image(path: Path, folder: str, name: str | None) -> str | None:
+    """A problem message if the info/ file names an image that isn't in its folder."""
+    image = path.parent / IMAGES_FOLDER / folder / name if name else None
+    return f"image: {image} does not exist" if image and not image.is_file() else None
+
+
+def parse_platforms(
+    path: Path, section: str, items: object
+) -> tuple[list[PlatformInput], list[str]]:
     if not isinstance(items, list):
-        return [], [f"{path}: '{PLATFORMS_SECTION}' must be a list"]
+        return [], [f"{path}: '{section}' must be a list"]
     platforms, problems = [], []
     for index, item in enumerate(items):
-        where = f"{path}: {PLATFORMS_SECTION}[{index}]"
+        where = f"{path}: {section}[{index}]"
         if not isinstance(item, dict):
             problems.append(f"{where}: expected a mapping with at least a name")
             continue
         try:
-            platforms.append(PlatformInput(**item))
+            platform = PlatformInput(**{**item, "kind": PLATFORM_SECTIONS[section]})
         except ValidationError as error:
             problems.extend(f"{where}: {message}" for message in describe_errors(error))
+            continue
+        problem = missing_image(path, PLATFORM_IMAGES, platform.image)
+        if problem:
+            problems.append(f"{where}: {problem}")
+            continue
+        platforms.append(platform)
     return platforms, problems
 
 
@@ -102,11 +122,18 @@ def parse_file(path: Path) -> tuple[list[PlatformInput], list[ImportEntry]]:
         raise ImportFileError([f"{path}: invalid YAML: {error}"]) from error
     if document is None:
         return [], []
-    if not isinstance(document, dict) or set(document) - {*SECTIONS, PLATFORMS_SECTION}:
-        message = "top level must only have 'platforms', 'movies', 'series' and 'games' lists"
+    if not isinstance(document, dict) or set(document) - {*SECTIONS, *PLATFORM_SECTIONS}:
+        message = (
+            "top level must only have 'movie', 'series', 'game', "
+            "'streaming_service' and 'game_console' lists"
+        )
         raise ImportFileError([f"{path}: {message}"])
 
-    platforms, problems = parse_platforms(path, document.get(PLATFORMS_SECTION) or [])
+    platforms, problems = [], []
+    for section in PLATFORM_SECTIONS:
+        found, section_problems = parse_platforms(path, section, document.get(section) or [])
+        platforms.extend(found)
+        problems.extend(section_problems)
     entries = []
     for section, kind in SECTIONS.items():
         items = document.get(section) or []
@@ -123,9 +150,9 @@ def parse_file(path: Path) -> tuple[list[PlatformInput], list[ImportEntry]]:
             except ValidationError as error:
                 problems.extend(f"{where}: {message}" for message in describe_errors(error))
                 continue
-            image = path.parent / IMAGES_FOLDER / entry.image if entry.image else None
-            if image and not image.is_file():
-                problems.append(f"{where}: image: {image} does not exist")
+            problem = missing_image(path, kind.value, entry.image)
+            if problem:
+                problems.append(f"{where}: {problem}")
                 continue
             entries.append(entry)
     if problems:

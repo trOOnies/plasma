@@ -294,13 +294,13 @@ def test_description_and_notes_are_saved_and_shown_separately(client, conn):
 
 
 def test_image_is_shown_and_served_from_info(client, conn, tmp_path):
-    (tmp_path / "info" / "images").mkdir(parents=True)
-    (tmp_path / "info" / "images" / "my poster.png").write_bytes(b"png")
+    (tmp_path / "info" / "images" / "movie").mkdir(parents=True)
+    (tmp_path / "info" / "images" / "movie" / "my poster.png").write_bytes(b"png")
     title_id = add(conn, movie())
     with conn:
         library.set_image(conn, title_id, "my poster.png")
-    assert 'src="/images/my%20poster.png"' in client.get(f"/titles/{title_id}").text
-    assert client.get("/images/my%20poster.png").content == b"png"
+    assert 'src="/images/movie/my%20poster.png"' in client.get(f"/titles/{title_id}").text
+    assert client.get("/images/movie/my%20poster.png").content == b"png"
 
 
 def test_titles_without_an_image_have_no_poster(client, conn):
@@ -309,13 +309,33 @@ def test_titles_without_an_image_have_no_poster(client, conn):
 
 
 def test_images_outside_the_folder_are_not_served(client, tmp_path):
-    (tmp_path / "info" / "images").mkdir(parents=True)
-    (tmp_path / "info" / "library.yaml").write_text("secret")
-    assert client.get("/images/..%2Flibrary.yaml").status_code == 404
+    (tmp_path / "info" / "images" / "movie").mkdir(parents=True)
+    (tmp_path / "info" / "images" / "other").mkdir()
+    (tmp_path / "info" / "images" / "other" / "a.png").write_text("secret")
+    (tmp_path / "info" / "game.yaml").write_text("secret")
+    assert client.get("/images/movie/..%2F..%2Fgame.yaml").status_code == 404
+    assert client.get("/images/other/a.png").status_code == 404
 
 
 def test_missing_image_gives_a_404(client):
-    assert client.get("/images/gone.jpg").status_code == 404
+    assert client.get("/images/movie/gone.jpg").status_code == 404
+
+
+def test_platform_image_is_shown_and_served(client, conn, tmp_path):
+    (tmp_path / "info" / "images" / "platform").mkdir(parents=True)
+    (tmp_path / "info" / "images" / "platform" / "n.png").write_bytes(b"png")
+    with conn:
+        library.fill_platform(conn, PlatformInput(name="Netflix", image="n.png"))
+    assert 'src="/images/platform/n.png"' in client.get("/platforms").text
+    assert 'src="/images/platform/n.png"' in client.get("/platforms/1").text
+    assert client.get("/images/platform/n.png").content == b"png"
+
+
+def test_saving_a_platform_keeps_its_image(client, conn):
+    with conn:
+        library.fill_platform(conn, PlatformInput(name="Netflix", image="n.png"))
+    client.post("/platforms/1", data={"name": "Netflix", "kind": "streaming"})
+    assert library.get_platform(conn, 1)["image"] == "n.png"
 
 
 def test_clicking_an_earlier_watched_episode_regresses(client, conn):
@@ -921,9 +941,9 @@ def uvicorn_calls(monkeypatch, tmp_path) -> list:
 def test_serve_creates_missing_inputs_and_stops_with_the_reason(uvicorn_calls, tmp_path, capsys):
     assert web.main([]) == 1
     assert uvicorn_calls == []
-    assert (tmp_path / "info" / "library.yaml").read_text() == ""
+    assert (tmp_path / "info" / "platform.yaml").read_text() == ""
     err = capsys.readouterr().err
-    assert "created empty" in err and "library.yaml" in err and "make import" in err
+    assert "created empty" in err and "platform.yaml" in err and "make import" in err
 
 
 def test_serve_starts_on_the_run_after_inputs_were_created(uvicorn_calls):
@@ -936,7 +956,7 @@ def test_serve_stops_when_only_the_file_is_missing(uvicorn_calls, tmp_path, caps
     (tmp_path / "info").mkdir()
     assert web.main([]) == 1
     err = capsys.readouterr().err
-    assert uvicorn_calls == [] and "info/library.yaml" in err
+    assert uvicorn_calls == [] and "info/platform.yaml" in err
 
 
 def test_serve_reports_inputs_it_cannot_create(uvicorn_calls, tmp_path, capsys):

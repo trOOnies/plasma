@@ -10,6 +10,7 @@
 <ul class="rows">
   {% for platform in platforms[kind] %}
   <li>
+    {% if platform.image %}<img class="platform-icon" src="/images/platform/{{ platform.image | urlencode }}" alt="">{% endif %}
     <a href="/platforms/{{ platform.id }}">{{ platform.name }}</a>
     <span class="muted">{{ platform.title_count }} title{{ "" if platform.title_count == 1 else "s" }}</span>
   </li>

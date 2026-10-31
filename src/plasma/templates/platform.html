@@ -5,6 +5,7 @@
 <nav class="breadcrumbs" aria-label="Breadcrumb">
   <a href="/platforms">Platforms</a>
 </nav>
+{% if platform.image %}<img class="platform-logo" src="/images/platform/{{ platform.image | urlencode }}" alt="">{% endif %}
 <h1>{{ platform.name }}</h1>
 <p class="muted">{{ {"streaming": "Streaming Platform", "console": "Game Console"}[platform.kind] }}</p>
 {% if platform.url %}<p><a href="{{ platform.url }}" rel="noreferrer">{{ platform.url }}</a></p>{% endif %}
