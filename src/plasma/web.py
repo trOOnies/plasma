@@ -6,7 +6,7 @@ import os
 import signal
 import sqlite3
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import date
 from math import ceil
 from pathlib import Path
@@ -1040,6 +1040,14 @@ def create_app(db_path: Path | str | None = None, info_dir: Path = INFO_DIR) -> 
     app.state.images_dir = info_dir / IMAGES_FOLDER
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.include_router(router)
+
+    @app.middleware("http")
+    async def never_cache_pages(request: Request, call_next: Callable) -> Response:
+        # A cached page shows old data, and clicking a toggle on one undoes a saved change.
+        response = await call_next(request)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(404)
     def not_found(request: Request, _: Exception) -> Response:

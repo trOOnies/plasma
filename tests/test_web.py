@@ -859,6 +859,16 @@ def test_exit_says_goodbye_and_stops_the_server(client, monkeypatch):
     assert stopped == [True]
 
 
+def test_pages_are_never_cached_so_they_cannot_show_old_data(client, conn):
+    title_id = add(conn, movie())
+    for url in ("/", "/titles?kind=movie", f"/titles/{title_id}", "/missing"):
+        assert client.get(url).headers["cache-control"] == "no-store"
+
+
+def test_images_and_styles_can_still_be_cached(client):
+    assert "cache-control" not in client.get("/static/style.css").headers
+
+
 def test_exit_button_is_on_every_page(client):
     assert 'action="/exit"' in client.get("/").text
     assert 'action="/exit"' in client.get("/help").text
