@@ -5,7 +5,7 @@
 Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.
 
 - Track movies and series as planned, watching, completed or dropped, with notes and a rating of 1 to 5 stars, which episodes can have too. Titles start with no status.
-- Link series, movies and games into a franchise, and step through it in release order.
+- Link series, movies or games into a franchise, and step through it in release order. Each franchise holds one type only, so a Harry Potter movie franchise and game franchise stay separate.
 - Track games too, with the hours you've played and whether you want or own each one. Singleplayer and multiplayer each keep their own status, and multiplayer can't be completed.
 - Tag titles with genres and an age restriction, then filter the library by either.
 - Group series, movies and games into plans, like playlists. Built-in plans hold everything you've marked with a heart (Favorites) or as planned (Planned).
@@ -94,7 +94,7 @@ movie:
     producer: FilmNation Entertainment
     status: completed      # planned, watching, completed or dropped. Blank by default.
     rating: 5              # 1 to 5 stars.
-    franchise: Arrival     # Titles sharing this link up in release order.
+    franchise: Arrival     # Movies sharing this link up in release order.
     duration: 116          # Minutes.
     release_date: 2016-11-11
     genres: [Drama, Sci-Fi]        # From the app's genre list, which differs for games.

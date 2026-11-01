@@ -70,11 +70,11 @@
     {% endif %}
 
     {% if title.franchise %}
-    <p class="meta"><span class="muted">Franchise:</span> <a class="platform-chip" href="/titles?franchise={{ title.franchise | urlencode }}">{{ title.franchise }}</a></p>
+    <p class="meta"><span class="muted">Franchise:</span> <a class="platform-chip" href="/titles?kind={{ title.kind }}&amp;franchise={{ title.franchise | urlencode }}">{{ title.franchise }}</a></p>
     {% if earlier or later %}
     <div class="pager franchise-pager">
-      {% if earlier %}<a href="/titles/{{ earlier.id }}">← {{ kind_icon(earlier.kind) }} {{ earlier.name }}</a>{% else %}<span></span>{% endif %}
-      {% if later %}<a href="/titles/{{ later.id }}">{{ kind_icon(later.kind) }} {{ later.name }} →</a>{% endif %}
+      {% if earlier %}<a href="/titles/{{ earlier.id }}">← {{ earlier.name }}</a>{% else %}<span></span>{% endif %}
+      {% if later %}<a href="/titles/{{ later.id }}">{{ later.name }} →</a>{% endif %}
     </div>
     {% endif %}
     {% endif %}

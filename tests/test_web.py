@@ -1322,14 +1322,30 @@ def test_title_form_has_no_rating_field(client):
 
 def test_franchise_links_titles_in_release_order(client, conn):
     first = add(conn, movie("Part One", year=2001, franchise="Saga"))
-    second = add(conn, series("Part Two", year=2005, franchise="Saga"))
-    third = add(conn, TitleInput(kind=Kind.GAME, name="Part Three", year=2010, franchise="Saga"))
+    second = add(conn, movie("Part Two", year=2005, franchise="Saga"))
+    third = add(conn, movie("Part Three", year=2010, franchise="Saga"))
     page = client.get(f"/titles/{second}").text
     assert f'href="/titles/{first}"' in page and f'href="/titles/{third}"' in page
-    assert "/titles?franchise=Saga" in page
-    listing = client.get("/titles?franchise=Saga").text
+    assert "/titles?kind=movie&amp;franchise=Saga" in page
+    listing = client.get("/titles?kind=movie&franchise=Saga").text
     assert listing.index("Part One") < listing.index("Part Two") < listing.index("Part Three")
     assert 'name="franchise" value="Saga"' in listing
+
+
+def test_franchise_with_a_shared_name_keeps_kinds_apart(client, conn):
+    film = add(conn, movie("Film", year=2001, franchise="Saga"))
+    add(conn, movie("Sequel", year=2005, franchise="Saga"))
+    show = add(conn, series("Show", year=2003, franchise="Saga"))
+    add(conn, TitleInput(kind=Kind.GAME, name="Quest", year=2004, franchise="Quest Saga"))
+    add(conn, TitleInput(kind=Kind.GAME, name="Other", year=2004, franchise="Saga"))
+    assert "Show" not in client.get(f"/titles/{film}").text
+    assert "franchise-pager" not in client.get(f"/titles/{show}").text
+    listing = client.get("/titles?kind=movie&franchise=Saga").text
+    assert "Film" in listing and "Show" not in listing and "Other" not in listing
+    game_form = client.get("/titles/new?kind=game").text
+    assert '<option value="Quest Saga">' in game_form
+    assert '<option value="Saga">' in game_form
+    assert '<option value="Quest Saga">' not in client.get("/titles/new?kind=movie").text
 
 
 def test_favorites_do_not_reorder_a_franchise(client, conn):
@@ -1337,7 +1353,7 @@ def test_favorites_do_not_reorder_a_franchise(client, conn):
     newer = add(conn, movie("Newer", year=2005, franchise="Saga"))
     with conn:
         library.toggle_favorite(conn, newer)
-    listing = client.get("/titles?franchise=Saga").text
+    listing = client.get("/titles?kind=movie&franchise=Saga").text
     assert listing.index("Older") < listing.index("Newer")
 
 

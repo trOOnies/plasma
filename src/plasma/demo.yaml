@@ -31,7 +31,7 @@ movie:
     rating: 4
   - name: Dune Part Two
     year: 2024
-    franchise: Dune                # Titles with the same franchise link up by release.
+    franchise: Dune                # Movies with the same franchise link up by release.
     status: planned                # Titles have no status unless you give them one.
   - name: Past Lives
     year: 2023

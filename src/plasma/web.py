@@ -286,7 +286,7 @@ def render_form(
         "title_id": title_id,
         "platforms": library.list_platforms(conn),
         "platform_ids": platform_ids,
-        "franchises": library.list_franchises(conn),
+        "franchises": library.list_franchises(conn, Kind(form["kind"])),
         "genre_options": GAME_GENRES if form["kind"] == "game" else SCREEN_GENRES,
     }
     return templates.TemplateResponse(request, "form.html", context, status_code=status_code)

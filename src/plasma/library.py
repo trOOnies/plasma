@@ -403,10 +403,12 @@ def set_episode_rating(
     )
 
 
-def list_franchises(conn: sqlite3.Connection) -> list[str]:
+def list_franchises(conn: sqlite3.Connection, kind: Kind) -> list[str]:
+    """Franchise names used by this kind. A franchise only ever holds titles of one kind."""
     rows = conn.execute(
-        "SELECT MIN(franchise) AS name FROM titles WHERE franchise != ''"
-        " GROUP BY franchise COLLATE NOCASE ORDER BY name COLLATE NOCASE"
+        "SELECT MIN(franchise) AS name FROM titles WHERE kind = ? AND franchise != ''"
+        " GROUP BY franchise COLLATE NOCASE ORDER BY name COLLATE NOCASE",
+        (kind.value,),
     )
     return [row["name"] for row in rows]
 
@@ -417,7 +419,9 @@ def franchise_neighbors(
     """The franchise's titles released just before and just after this one."""
     if not title["franchise"]:
         return None, None
-    titles = list_titles(conn, franchise=title["franchise"], order=FRANCHISE_ORDER)
+    titles = list_titles(
+        conn, Kind(title["kind"]), franchise=title["franchise"], order=FRANCHISE_ORDER
+    )
     index = [row["id"] for row in titles].index(title["id"])
     earlier = titles[index - 1] if index > 0 else None
     later = titles[index + 1] if index + 1 < len(titles) else None

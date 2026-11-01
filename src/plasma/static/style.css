@@ -490,7 +490,6 @@ button.star.filled svg { fill: currentColor; }
 .stars button.star:hover ~ button.star svg { fill: none; }
 .episode-rows .stars { margin: 0 0 0 auto; }
 .franchise-pager { margin: 8px 0; }
-.franchise-pager .kind-icon { vertical-align: -0.2em; }
 
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0; }
 .meta:empty { display: none; }

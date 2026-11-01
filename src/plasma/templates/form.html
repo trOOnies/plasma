@@ -24,7 +24,7 @@
   </label>
   <label>Franchise
     <input name="franchise" value="{{ form.franchise }}" maxlength="200" list="franchises">
-    <small class="muted">Series, movies and games with the same franchise link to each other in release order.</small>
+    <small class="muted">Titles of this type with the same franchise link to each other in release order.</small>
   </label>
   <datalist id="franchises">
     {% for franchise in franchises %}<option value="{{ franchise }}"></option>{% endfor %}

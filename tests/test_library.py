@@ -796,12 +796,12 @@ def test_game_tab_order(conn):
     assert titles_in_order(conn, library.GAME_TAB_ORDER) == list("EBCFAGD")
 
 
-def test_franchise_runs_in_release_order_across_kinds(conn):
+def test_franchise_runs_in_release_order(conn):
     undated = library.create_title(conn, movie("Spin-off", franchise="Saga"))
     second = library.create_title(
-        conn, game("Second", franchise="saga", release_date=date(2015, 5, 19))
+        conn, movie("Second", franchise="saga", release_date=date(2015, 5, 19))
     )
-    first = library.create_title(conn, series("First", franchise="Saga", year=2010))
+    first = library.create_title(conn, movie("First", franchise="Saga", year=2010))
     third = library.create_title(conn, movie("Third", franchise="SAGA", year=2015))
     library.create_title(conn, movie("Elsewhere", year=2012))
 
@@ -820,12 +820,23 @@ def test_title_without_a_franchise_has_no_neighbors(conn):
     assert library.franchise_neighbors(conn, title) == (None, None)
 
 
+def test_franchise_with_a_shared_name_stays_within_its_kind(conn):
+    library.create_title(conn, movie("Film", franchise="Saga", year=2001))
+    shown = library.create_title(conn, movie("Sequel", franchise="Saga", year=2005))
+    library.create_title(conn, game("Game", franchise="Saga", year=2003))
+    library.create_title(conn, series("Show", franchise="Saga", year=2004))
+    earlier, later = library.franchise_neighbors(conn, library.get_title(conn, shown))
+    assert earlier["name"] == "Film" and later is None
+
+
 def test_franchises_are_listed_once_ignoring_case(conn):
     library.create_title(conn, movie("A", franchise="Saga"))
     library.create_title(conn, movie("B", franchise="saga"))
     library.create_title(conn, game("C", franchise="Other"))
     library.create_title(conn, movie("D"))
-    assert library.list_franchises(conn) == ["Other", "Saga"]
+    assert library.list_franchises(conn, Kind.MOVIE) == ["Saga"]
+    assert library.list_franchises(conn, Kind.GAME) == ["Other"]
+    assert library.list_franchises(conn, Kind.SERIES) == []
 
 
 def test_planned_count_includes_multiplayer(conn):
