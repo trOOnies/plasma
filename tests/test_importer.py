@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from plasma import importer, library, seed
-from plasma.models import Details, Kind, Ownership, TitleInput
+from plasma.db import connect
+from plasma.models import Details, Kind, Ownership, PlatformInput, TitleInput
 
 
 def write(directory: Path, text: str, name: str = "library.yaml") -> Path:
@@ -671,3 +672,197 @@ def test_reimport_keeps_singleplayer_that_has_a_status(conn, tmp_path):
     importer.import_paths(conn, [write(tmp_path, text)])
     title = library.list_titles(conn)[0]
     assert (title["singleplayer"], title["multiplayer"]) == (1, 1)
+
+
+REMOVABLE = """
+game:
+  - name: Quest
+    year: 2020
+    rating: 4
+    notes: Mine
+    genres: [RPG]
+    platforms: [Steam]
+series:
+  - name: Show
+    seasons: [3, 2]
+    episodes:
+      S01E01:
+        description: Pilot
+        rating: 4
+"""
+
+
+def imported(conn, tmp_path, text=REMOVABLE):
+    path = write(tmp_path, text)
+    importer.import_paths(conn, [path])
+    return path
+
+
+def quest(conn):
+    return library.find_title(conn, Kind.GAME, "Quest", 2020)
+
+
+def details(title, **changes):
+    fields = {"kind": Kind(title["kind"]), "name": title["name"], "year": title["year"]}
+    fields["notes"] = title["notes"]
+    return TitleInput(**{**fields, **changes})
+
+
+def test_reimport_keeps_a_rating_cleared_in_the_app(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.set_rating(conn, quest(conn)["id"], None)
+    importer.import_paths(conn, [path])
+    assert quest(conn)["rating"] is None
+
+
+def test_reimport_keeps_fields_emptied_in_the_edit_form(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.update_title(conn, quest(conn)["id"], details(quest(conn), notes="", genres=[]))
+    importer.import_paths(conn, [path])
+    assert quest(conn)["notes"] == ""
+    assert library.title_genres(conn, quest(conn)["id"]) == []
+
+
+def test_reimport_still_fills_fields_the_user_never_emptied(conn, tmp_path):
+    imported(conn, tmp_path)
+    library.set_rating(conn, quest(conn)["id"], None)
+    more = "game:\n  - name: Quest\n    year: 2020\n    rating: 4\n    producer: Studio\n"
+    importer.import_paths(conn, [write(tmp_path, more, "more.yaml")])
+    assert (quest(conn)["rating"], quest(conn)["producer"]) == (None, "Studio")
+
+
+def test_reimport_keeps_platforms_removed_from_a_title(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.set_title_platforms(conn, quest(conn)["id"], [])
+    importer.import_paths(conn, [path])
+    assert library.title_platforms(conn, quest(conn)["id"]) == []
+
+
+def test_reimport_does_not_bring_back_a_deleted_title(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.delete_title(conn, quest(conn)["id"])
+    result = importer.import_paths(conn, [path])
+    assert quest(conn) is None
+    assert (result.added, result.skipped) == (0, 1)
+
+
+def test_a_deleted_title_can_be_added_again_and_then_imports_normally(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.delete_title(conn, quest(conn)["id"])
+    library.create_title(conn, TitleInput(kind=Kind.GAME, name="Quest", year=2020))
+    importer.import_paths(conn, [path])
+    assert quest(conn)["rating"] == 4
+
+
+def test_reimport_does_not_duplicate_a_renamed_title(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.update_title(conn, quest(conn)["id"], details(quest(conn), name="Renamed"))
+    result = importer.import_paths(conn, [path])
+    assert quest(conn) is None
+    assert library.find_title(conn, Kind.GAME, "Renamed", 2020) is not None
+    assert result.added == 0
+
+
+def test_reimport_treats_a_change_of_capitals_as_the_same_title(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    library.update_title(conn, quest(conn)["id"], details(quest(conn), name="QUEST"))
+    result = importer.import_paths(conn, [path])
+    assert (result.added, result.skipped) == (0, 0)
+
+
+def test_reimport_does_not_bring_back_a_deleted_season(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    show = library.find_title(conn, Kind.SERIES, "Show", None)["id"]
+    library.delete_last_season(conn, show)
+    importer.import_paths(conn, [path])
+    assert library.season_counts(conn, show) == [3]
+
+
+def test_reimport_does_not_bring_back_removed_episodes(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    show = library.find_title(conn, Kind.SERIES, "Show", None)["id"]
+    library.resize_season(conn, show, 1, 2)
+    importer.import_paths(conn, [path])
+    assert library.season_counts(conn, show) == [2, 2]
+
+
+def test_reimport_can_grow_a_trimmed_season_past_what_was_removed(conn, tmp_path):
+    imported(conn, tmp_path)
+    show = library.find_title(conn, Kind.SERIES, "Show", None)["id"]
+    library.resize_season(conn, show, 1, 2)
+    longer = "series:\n  - name: Show\n    seasons: [5, 2]\n"
+    importer.import_paths(conn, [write(tmp_path, longer, "longer.yaml")])
+    assert library.season_counts(conn, show) == [5, 2]
+
+
+def test_reimport_keeps_episode_details_cleared_in_the_app(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    show = library.find_title(conn, Kind.SERIES, "Show", None)["id"]
+    library.update_episode(conn, show, 1, 1, Details())
+    library.set_episode_rating(conn, show, 1, 1, None)
+    importer.import_paths(conn, [path])
+    episode = library.get_episode(conn, show, 1, 1)
+    assert (episode["description"], episode["rating"]) == ("", None)
+
+
+PLATFORMS = """
+streaming_service:
+  - name: Netflix
+    url: https://netflix.com
+"""
+
+
+def test_reimport_does_not_bring_back_a_deleted_platform(conn, tmp_path):
+    path = imported(conn, tmp_path, PLATFORMS)
+    library.delete_platform(conn, library.list_platforms(conn)[0]["id"])
+    result = importer.import_paths(conn, [path])
+    assert library.list_platforms(conn) == []
+    assert result.platforms_added == 0
+
+
+def test_reimport_does_not_recreate_a_deleted_platform_for_a_title(conn, tmp_path):
+    path = imported(conn, tmp_path)
+    steam = library.title_platforms(conn, quest(conn)["id"])[0]["id"]
+    library.delete_platform(conn, steam)
+    importer.import_paths(conn, [path])
+    assert library.list_platforms(conn) == []
+
+
+def test_reimport_keeps_a_platform_url_cleared_or_renamed_in_the_app(conn, tmp_path):
+    path = imported(conn, tmp_path, PLATFORMS)
+    platform = library.list_platforms(conn)[0]["id"]
+    library.update_platform(conn, platform, PlatformInput(name="Netflix", url=""))
+    importer.import_paths(conn, [path])
+    assert library.get_platform(conn, platform)["url"] == ""
+    library.update_platform(conn, platform, PlatformInput(name="Flix"))
+    importer.import_paths(conn, [path])
+    assert [row["name"] for row in library.list_platforms(conn)] == ["Flix"]
+
+
+def test_a_deleted_platform_can_be_added_again(conn, tmp_path):
+    path = imported(conn, tmp_path, PLATFORMS)
+    library.delete_platform(conn, library.list_platforms(conn)[0]["id"])
+    library.create_platform(conn, PlatformInput(name="Netflix"))
+    importer.import_paths(conn, [path])
+    assert library.list_platforms(conn)[0]["url"] == "https://netflix.com"
+
+
+def test_deleting_a_title_also_forgets_what_was_cleared_on_it(conn, tmp_path):
+    imported(conn, tmp_path)
+    title = quest(conn)["id"]
+    library.set_rating(conn, title, None)
+    library.delete_title(conn, title)
+    assert conn.execute("SELECT COUNT(*) FROM cleared_fields").fetchone()[0] == 0
+
+
+def test_main_reports_skipped_titles(tmp_path, db_path, monkeypatch, capsys):
+    monkeypatch.setenv("PLASMA_DB", str(db_path))
+    write(tmp_path, "movie:\n  - name: Film\n")
+    assert importer.main([str(tmp_path)]) == 0
+    assert "Skipped" not in capsys.readouterr().out
+    conn = connect(db_path)
+    with conn:
+        library.delete_title(conn, library.find_title(conn, Kind.MOVIE, "Film", None)["id"])
+    conn.close()
+    assert importer.main([str(tmp_path)]) == 0
+    assert "Skipped 1 title(s)" in capsys.readouterr().out

@@ -2,7 +2,9 @@
 
 A title's tracking fields (status, watch date, progress, ownership) are read the first
 time it is imported. After that the app owns them, so a re-import cannot undo anything
-done in the web UI. Re-imports only add new titles, add newly listed episodes, fill
+done in the web UI. That includes taking something away: a field the user emptied stays
+empty, and a title, platform, season or episode they deleted or renamed isn't added back.
+Re-imports only add new titles, add newly listed episodes, fill
 in a rating, age restriction, duration, hours played, producer, franchise, release date,
 description, notes, genres, platforms or multiplayer setting that are still blank, and
 apply the image, which can only be set from info/. The streaming_service and game_console
@@ -72,6 +74,7 @@ class ImportResult:
     updated: int = 0
     unchanged: int = 0
     platforms_added: int = 0
+    skipped: int = 0
 
 
 def ensure_inputs(directory: Path = INFO_DIR) -> list[Path]:
@@ -188,6 +191,9 @@ def import_entries(
         result.platforms_added += library.fill_platform(conn, platform)
     for entry in entries:
         existing = library.find_title(conn, entry.kind, entry.name, entry.year)
+        if existing is None and library.is_removed(conn, entry.kind.value, entry.name, entry.year):
+            result.skipped += 1
+            continue
         if existing is None:
             title_id = library.create_title(
                 conn, entry.model_copy(update={"watched_through": None})
@@ -279,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(paths)} file(s): {result.added} added, {result.updated} updated, "
         f"{result.unchanged} unchanged, {result.platforms_added} new platform(s)."
     )
+    if result.skipped:
+        print(f"Skipped {result.skipped} title(s) deleted or renamed in the app.")
     return 0
 
 

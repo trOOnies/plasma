@@ -150,15 +150,17 @@ Images can be `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` or `.avif` files.
 
 ### Importing again
 
-Importing is safe to repeat. Status, watch dates, progress and `ownership` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI.
+Importing is safe to repeat. Status, watch dates, progress and `ownership` are read only the first time a title is imported. After that the app owns them, so a new import can't undo anything you did in the web UI. Every button saves straight away, so nothing depends on the exit button.
+
+That covers taking things away too. A field you emptied stays empty, and a title, platform, season or episode you deleted or renamed isn't added back, even though `info/` still lists it. To get a deleted title or platform back, add it again in the app.
 
 A repeat import does these things and nothing else:
 
-- Adds new titles.
-- Adds new platforms, fills in a platform's blank `url` or `release_year` and sets its `image`. A platform that already exists keeps its type, which you can change on its page.
-- Adds episodes for longer `seasons` lists. A completed series goes back to watching.
-- Fills in a rating, age restriction, duration, hours played, producer, franchise, release date, description, notes, genres or platforms that are still blank, for titles and episodes.
+- Adds new titles, except ones you deleted or renamed in the app.
+- Adds new platforms, except ones you deleted or renamed in the app, fills in a platform's blank `url` or `release_year` and sets its `image`. A platform that already exists keeps its type, which you can change on its page.
+- Adds episodes for longer `seasons` lists, unless you removed them in the app and the list doesn't go past them. A completed series goes back to watching.
+- Fills in a rating, age restriction, duration, hours played, producer, franchise, release date, description, notes, genres or platforms that are still blank, for titles and episodes, unless you emptied them in the app.
 - Turns on `multiplayer`, with its `multiplayer_status`, for a game where neither the app nor an earlier import has set it. If that entry also says `singleplayer: false`, singleplayer goes off too, unless the game already has a status for it.
 - Sets the `image`, replacing any previous one. Images can only be set from `info/`.
 
-To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI.
+To rebuild everything from `info/`, delete `local/plasma.db` and run `make import`. This discards all progress recorded in the web UI, and brings back everything you removed there.

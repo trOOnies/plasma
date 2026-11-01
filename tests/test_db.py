@@ -315,3 +315,23 @@ def test_upgrade_to_stars_and_ownership(db_path):
     assert library.get_title(conn, 1)["franchise"] == ""
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     conn.close()
+
+
+def test_upgrade_from_version_8_keeps_everything_and_starts_tracking_removals(db_path):
+    conn = connect(db_path)
+    with conn:
+        conn.execute("INSERT INTO titles (kind, name, rating) VALUES ('movie', 'Film', 4)")
+    conn.executescript(
+        "DROP TABLE removed_entries; DROP TABLE cleared_fields;"
+        " DROP TABLE cleared_platform_fields; DROP TABLE trimmed_seasons;"
+    )
+    conn.execute("PRAGMA user_version = 8")
+    conn.close()
+
+    conn = connect(db_path)
+    assert library.get_title(conn, 1)["rating"] == 4
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    with conn:
+        library.delete_title(conn, 1)
+    assert library.is_removed(conn, "movie", "Film")
+    conn.close()

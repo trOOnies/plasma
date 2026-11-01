@@ -8,7 +8,7 @@ from plasma.models import PlatformKind, guess_platform_kind
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
         CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
@@ -99,6 +99,35 @@ CREATE TABLE IF NOT EXISTS plan_items (
     plan_id INTEGER NOT NULL REFERENCES plans (id) ON DELETE CASCADE,
     title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
     UNIQUE (plan_id, title_id)
+);
+
+-- What the web UI took away, so that importing info/ again can't bring it back.
+CREATE TABLE IF NOT EXISTS removed_entries (
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL COLLATE NOCASE,
+    year INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, name, year)
+);
+
+CREATE TABLE IF NOT EXISTS cleared_fields (
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    season INTEGER NOT NULL DEFAULT 0,
+    number INTEGER NOT NULL DEFAULT 0,
+    field TEXT NOT NULL,
+    PRIMARY KEY (title_id, season, number, field)
+);
+
+CREATE TABLE IF NOT EXISTS cleared_platform_fields (
+    platform_id INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    PRIMARY KEY (platform_id, field)
+);
+
+CREATE TABLE IF NOT EXISTS trimmed_seasons (
+    title_id INTEGER NOT NULL REFERENCES titles (id) ON DELETE CASCADE,
+    season INTEGER NOT NULL,
+    episodes INTEGER NOT NULL,
+    PRIMARY KEY (title_id, season)
 );
 """
 

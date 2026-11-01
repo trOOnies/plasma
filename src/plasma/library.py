@@ -15,6 +15,7 @@ watched episode moves progress back to it, or unmarks it if it's the last one wa
 """
 
 import sqlite3
+from collections.abc import Iterable
 from datetime import date, timedelta
 from itertools import zip_longest
 
@@ -149,6 +150,68 @@ def list_titles(
     return conn.execute(f"{TITLE_SELECT}{where} GROUP BY t.id ORDER BY {order}", params).fetchall()
 
 
+BLANK = (None, "")
+PLATFORM_ENTRY = "platform"
+
+
+def is_removed(conn: sqlite3.Connection, kind: str, name: str, year: int | None = None) -> bool:
+    """Whether the web UI deleted or renamed this entry, so an import must not add it back."""
+    row = conn.execute(
+        "SELECT 1 FROM removed_entries WHERE kind = ? AND name = ? AND year = ?",
+        (kind, name, year or 0),
+    ).fetchone()
+    return row is not None
+
+
+def _note_removed(conn: sqlite3.Connection, kind: str, name: str, year: int | None = None) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO removed_entries (kind, name, year) VALUES (?, ?, ?)",
+        (kind, name, year or 0),
+    )
+
+
+def _forget_removed(
+    conn: sqlite3.Connection, kind: str, name: str, year: int | None = None
+) -> None:
+    conn.execute(
+        "DELETE FROM removed_entries WHERE kind = ? AND name = ? AND year = ?",
+        (kind, name, year or 0),
+    )
+
+
+def _cleared_fields(
+    conn: sqlite3.Connection, title_id: int, season: int = 0, number: int = 0
+) -> set[str]:
+    rows = conn.execute(
+        "SELECT field FROM cleared_fields WHERE title_id = ? AND season = ? AND number = ?",
+        (title_id, season, number),
+    )
+    return {row["field"] for row in rows}
+
+
+def _note_cleared(
+    conn: sqlite3.Connection,
+    title_id: int,
+    fields: Iterable[str],
+    season: int = 0,
+    number: int = 0,
+) -> None:
+    conn.executemany(
+        "INSERT OR IGNORE INTO cleared_fields (title_id, season, number, field)"
+        " VALUES (?, ?, ?, ?)",
+        [(title_id, season, number, field) for field in fields],
+    )
+
+
+def _emptied(row: sqlite3.Row, values: dict[str, object]) -> list[str]:
+    """The columns that have a value now and are about to lose it."""
+    return [
+        column
+        for column, value in values.items()
+        if value in BLANK and row[column] not in BLANK
+    ]
+
+
 def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
     try:
         title_id = conn.execute(
@@ -179,6 +242,7 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
         ).lastrowid
     except sqlite3.IntegrityError as error:
         raise DuplicateTitleError(data.name) from error
+    _forget_removed(conn, data.kind.value, data.name, data.year)
     _set_seasons(conn, title_id, data.seasons)
     _set_genres(conn, title_id, data.genres)
     if data.status is Status.COMPLETED:
@@ -188,7 +252,21 @@ def create_title(conn: sqlite3.Connection, data: TitleInput) -> int:
 
 
 def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> None:
-    previous = get_title(conn, title_id)["status"]
+    title = get_title(conn, title_id)
+    previous = title["status"]
+    fields = {
+        "age_restriction": _age_value(data.age_restriction),
+        "duration": data.duration,
+        "release_date": iso_date(data.release_date),
+        "hours_played": data.hours_played,
+        "producer": data.producer,
+        "franchise": data.franchise,
+        "description": data.description,
+        "notes": data.notes,
+    }
+    cleared = _emptied(title, fields)
+    if title_genres(conn, title_id) and not data.genres:
+        cleared.append("genres")
     try:
         conn.execute(
             "UPDATE titles SET name = ?, year = ?, status = ?, singleplayer = ?,"
@@ -219,6 +297,10 @@ def update_title(conn: sqlite3.Connection, title_id: int, data: TitleInput) -> N
         )
     except sqlite3.IntegrityError as error:
         raise DuplicateTitleError(data.name) from error
+    _note_cleared(conn, title_id, cleared)
+    if (title["name"].casefold(), title["year"] or 0) != (data.name.casefold(), data.year or 0):
+        _note_removed(conn, title["kind"], title["name"], title["year"])
+        _forget_removed(conn, title["kind"], data.name, data.year)
     _set_genres(conn, title_id, data.genres)
     # Only a change to completed marks everything watched. A form re-submitted as
     # completed must leave any season added since then unwatched.
@@ -248,13 +330,15 @@ def title_genres(conn: sqlite3.Connection, title_id: int) -> list[str]:
 
 def fill_title_genres(conn: sqlite3.Connection, title_id: int, genres: list[str]) -> bool:
     """Set the title's genres unless it already has some. Returns True if it changed."""
-    if not genres or title_genres(conn, title_id):
+    if not genres or title_genres(conn, title_id) or "genres" in _cleared_fields(conn, title_id):
         return False
     _set_genres(conn, title_id, genres)
     return True
 
 
 def delete_title(conn: sqlite3.Connection, title_id: int) -> None:
+    title = get_title(conn, title_id)
+    _note_removed(conn, title["kind"], title["name"], title["year"])
     conn.execute("DELETE FROM titles WHERE id = ?", (title_id,))
 
 
@@ -263,11 +347,13 @@ def _fill_blanks(
     table: str,
     row: sqlite3.Row,
     values: dict[str, bool | int | str | None],
+    cleared: set[str],
 ) -> bool:
+    """Fill the row's blanks, leaving alone any the user emptied on purpose."""
     changes = {
         column: value
         for column, value in values.items()
-        if value not in (None, "") and row[column] in (None, "")
+        if value not in BLANK and row[column] in BLANK and column not in cleared
     }
     if changes:
         assignments = ", ".join(f"{column} = ?" for column in changes)
@@ -281,7 +367,8 @@ def fill_blanks(
     conn: sqlite3.Connection, title_id: int, **values: bool | int | str | None
 ) -> bool:
     """Set the given columns only where the title has no value. Returns True if any changed."""
-    return _fill_blanks(conn, "titles", get_title(conn, title_id), values)
+    cleared = _cleared_fields(conn, title_id)
+    return _fill_blanks(conn, "titles", get_title(conn, title_id), values, cleared)
 
 
 def set_image(conn: sqlite3.Connection, title_id: int, image: str) -> None:
@@ -301,12 +388,15 @@ def set_ownership(conn: sqlite3.Connection, title_id: int, ownership: Ownership)
 
 
 def set_rating(conn: sqlite3.Connection, title_id: int, rating: int | None) -> None:
+    _note_cleared(conn, title_id, _emptied(get_title(conn, title_id), {"rating": rating}))
     conn.execute("UPDATE titles SET rating = ? WHERE id = ?", (rating, title_id))
 
 
 def set_episode_rating(
     conn: sqlite3.Connection, title_id: int, season: int, number: int, rating: int | None
 ) -> None:
+    episode = get_episode(conn, title_id, season, number)
+    _note_cleared(conn, title_id, _emptied(episode, {"rating": rating}), season, number)
     conn.execute(
         "UPDATE episodes SET rating = ? WHERE title_id = ? AND season = ? AND number = ?",
         (rating, title_id, season, number),
@@ -368,9 +458,22 @@ def _set_seasons(conn: sqlite3.Connection, title_id: int, counts: list[int]) -> 
 
 
 def extend_seasons(conn: sqlite3.Connection, title_id: int, counts: list[int]) -> bool:
-    """Grow the episode list to at least `counts`. Returns True if anything was added."""
+    """Grow the episode list to at least `counts`. Returns True if anything was added.
+
+    Episodes the user removed stay removed, unless `counts` now goes past them.
+    """
     current = season_counts(conn, title_id)
-    merged = [max(pair) for pair in zip_longest(current, counts, fillvalue=0)]
+    rows = conn.execute(
+        "SELECT season, episodes FROM trimmed_seasons WHERE title_id = ?", (title_id,)
+    )
+    trimmed = {row["season"]: row["episodes"] for row in rows}
+    wanted = [
+        count if count > trimmed.get(season, 0) else 0
+        for season, count in enumerate(counts, start=1)
+    ]
+    merged = [max(pair) for pair in zip_longest(current, wanted, fillvalue=0)]
+    while merged and merged[-1] == 0:
+        merged.pop()
     if merged == current:
         return False
     _set_seasons(conn, title_id, merged)
@@ -388,12 +491,25 @@ def add_season(conn: sqlite3.Connection, title_id: int, episodes: int) -> int:
 def resize_season(conn: sqlite3.Connection, title_id: int, season: int, episodes: int) -> None:
     """Change a season's size. Episodes removed lose their details and watch history."""
     counts = season_counts(conn, title_id)
+    if episodes < counts[season - 1]:
+        _note_trimmed(conn, title_id, season, counts[season - 1])
     counts[season - 1] = episodes
     _replace_seasons(conn, title_id, counts)
 
 
 def delete_last_season(conn: sqlite3.Connection, title_id: int) -> None:
-    _replace_seasons(conn, title_id, season_counts(conn, title_id)[:-1])
+    counts = season_counts(conn, title_id)
+    _note_trimmed(conn, title_id, len(counts), counts[-1])
+    _replace_seasons(conn, title_id, counts[:-1])
+
+
+def _note_trimmed(conn: sqlite3.Connection, title_id: int, season: int, episodes: int) -> None:
+    conn.execute(
+        "INSERT INTO trimmed_seasons (title_id, season, episodes) VALUES (?, ?, ?)"
+        " ON CONFLICT (title_id, season) DO UPDATE"
+        " SET episodes = MAX(episodes, excluded.episodes)",
+        (title_id, season, episodes),
+    )
 
 
 def _replace_seasons(conn: sqlite3.Connection, title_id: int, counts: list[int]) -> None:
@@ -442,6 +558,13 @@ def adjacent_episodes(
 def update_episode(
     conn: sqlite3.Connection, title_id: int, season: int, number: int, data: Details
 ) -> None:
+    fields = {
+        "duration": data.duration,
+        "release_date": iso_date(data.release_date),
+        "description": data.description,
+    }
+    episode = get_episode(conn, title_id, season, number)
+    _note_cleared(conn, title_id, _emptied(episode, fields), season, number)
     conn.execute(
         "UPDATE episodes SET duration = ?, release_date = ?, description = ?"
         " WHERE title_id = ? AND season = ? AND number = ?",
@@ -459,7 +582,10 @@ def fill_episode_blanks(
         "description": data.description,
         "rating": data.rating,
     }
-    return _fill_blanks(conn, "episodes", get_episode(conn, title_id, season, number), values)
+    row = get_episode(conn, title_id, season, number)
+    return _fill_blanks(
+        conn, "episodes", row, values, _cleared_fields(conn, title_id, season, number)
+    )
 
 
 def next_episode(conn: sqlite3.Connection, title_id: int) -> sqlite3.Row | None:
@@ -614,32 +740,49 @@ def get_platform(conn: sqlite3.Connection, platform_id: int) -> sqlite3.Row | No
 
 def create_platform(conn: sqlite3.Connection, data: PlatformInput) -> int:
     try:
-        return conn.execute(
+        platform_id = conn.execute(
             "INSERT INTO platforms (name, url, kind, release_year) VALUES (?, ?, ?, ?)",
             (data.name, data.url, data.kind.value, data.release_year),
         ).lastrowid
     except sqlite3.IntegrityError as error:
         raise DuplicatePlatformError(data.name) from error
+    _forget_removed(conn, PLATFORM_ENTRY, data.name)
+    return platform_id
 
 
 def fill_platform(conn: sqlite3.Connection, data: PlatformInput) -> bool:
     """Add a platform, or fill in its blanks and apply its image. Returns whether it's new."""
+    if is_removed(conn, PLATFORM_ENTRY, data.name):
+        return False
     added = conn.execute(
         "INSERT OR IGNORE INTO platforms (name, url, kind, release_year, image)"
         " VALUES (?, ?, ?, ?, ?)",
         (data.name, data.url, data.kind.value, data.release_year, data.image),
     ).rowcount
-    conn.execute("UPDATE platforms SET url = ? WHERE name = ? AND url = ''", (data.url, data.name))
-    conn.execute(
-        "UPDATE platforms SET release_year = ? WHERE name = ? AND release_year IS NULL",
-        (data.release_year, data.name),
+    platform_id = conn.execute(
+        "SELECT id FROM platforms WHERE name = ?", (data.name,)
+    ).fetchone()["id"]
+    rows = conn.execute(
+        "SELECT field FROM cleared_platform_fields WHERE platform_id = ?", (platform_id,)
     )
+    cleared = {row["field"] for row in rows}
+    if "url" not in cleared:
+        conn.execute(
+            "UPDATE platforms SET url = ? WHERE id = ? AND url = ''", (data.url, platform_id)
+        )
+    if "release_year" not in cleared:
+        conn.execute(
+            "UPDATE platforms SET release_year = ? WHERE id = ? AND release_year IS NULL",
+            (data.release_year, platform_id),
+        )
     if data.image:
         conn.execute("UPDATE platforms SET image = ? WHERE name = ?", (data.image, data.name))
     return added > 0
 
 
 def update_platform(conn: sqlite3.Connection, platform_id: int, data: PlatformInput) -> None:
+    platform = get_platform(conn, platform_id)
+    cleared = _emptied(platform, {"url": data.url, "release_year": data.release_year})
     try:
         conn.execute(
             "UPDATE platforms SET name = ?, url = ?, kind = ?, release_year = ? WHERE id = ?",
@@ -647,9 +790,17 @@ def update_platform(conn: sqlite3.Connection, platform_id: int, data: PlatformIn
         )
     except sqlite3.IntegrityError as error:
         raise DuplicatePlatformError(data.name) from error
+    conn.executemany(
+        "INSERT OR IGNORE INTO cleared_platform_fields (platform_id, field) VALUES (?, ?)",
+        [(platform_id, field) for field in cleared],
+    )
+    if platform["name"].casefold() != data.name.casefold():
+        _note_removed(conn, PLATFORM_ENTRY, platform["name"])
+        _forget_removed(conn, PLATFORM_ENTRY, data.name)
 
 
 def delete_platform(conn: sqlite3.Connection, platform_id: int) -> None:
+    _note_removed(conn, PLATFORM_ENTRY, get_platform(conn, platform_id)["name"])
     conn.execute("DELETE FROM platforms WHERE id = ?", (platform_id,))
 
 
@@ -664,6 +815,8 @@ def title_platforms(conn: sqlite3.Connection, title_id: int) -> list[sqlite3.Row
 def set_title_platforms(
     conn: sqlite3.Connection, title_id: int, platform_ids: list[int]
 ) -> None:
+    if title_platforms(conn, title_id) and not platform_ids:
+        _note_cleared(conn, title_id, ["platforms"])
     conn.execute("DELETE FROM title_platforms WHERE title_id = ?", (title_id,))
     conn.executemany(
         "INSERT OR IGNORE INTO title_platforms (title_id, platform_id)"
@@ -674,7 +827,12 @@ def set_title_platforms(
 
 def fill_title_platforms(conn: sqlite3.Connection, title_id: int, names: list[str]) -> bool:
     """Link platforms by name, creating new ones, unless the title already has some."""
-    if not names or title_platforms(conn, title_id):
+    names = [name for name in names if not is_removed(conn, PLATFORM_ENTRY, name)]
+    if (
+        not names
+        or title_platforms(conn, title_id)
+        or "platforms" in _cleared_fields(conn, title_id)
+    ):
         return False
     is_game = get_title(conn, title_id)["kind"] == Kind.GAME.value
     kind = PlatformKind.CONSOLE if is_game else PlatformKind.STREAMING
