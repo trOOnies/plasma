@@ -36,6 +36,14 @@ def test_icon_is_served_and_shown_in_the_header_and_help(client):
     assert icon in client.get("/help").text.split("</header>")[1]
 
 
+def test_icon_is_used_for_the_browser_tab(client, monkeypatch):
+    monkeypatch.setattr(web, "stop_server", lambda: None)
+    favicon = '<link rel="icon" href="/static/plasma.svg" type="image/svg+xml">'
+    assert favicon in client.get("/").text.split("</head>")[0]
+    assert favicon in client.get("/help").text.split("</head>")[0]
+    assert favicon in client.post("/exit").text.split("</head>")[0]
+
+
 def test_home_offers_next_episode_and_returns_home(client, conn):
     title_id = add(conn, series("Show", seasons=(2, 2)))
     client.post(f"/titles/{title_id}/episodes/1/1")
