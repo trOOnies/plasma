@@ -41,12 +41,29 @@
 </div>
 {% endmacro %}
 
+{% macro title_facts(title) %}{% set facts = [title.year, title.rating and "★ %d" % title.rating, title.age_restriction and age_label(title.age_restriction), title.ownership != "none" and title.ownership] %}{{ facts | select | join(" · ") }}{% endmacro %}
+
+{% macro title_tile(title, show_kind=false) %}
+<li class="tile">
+  <a href="/titles/{{ title.id }}">
+    <span class="tile-art">
+      {% if title.image %}<img src="/images/{{ title.kind }}/{{ title.image | urlencode }}" alt="" loading="lazy">{% else %}<span class="tile-blank">{{ kind_icon(title.kind) }}</span>{% endif %}
+      {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
+    </span>
+    <span class="tile-name" title="{{ title.name }}">{{ title.name }}</span>
+  </a>
+  <span class="muted tile-facts">{% if show_kind %}{{ kind_icon(title.kind) }} {% endif %}{{ title_facts(title) }}</span>
+  <div class="tile-badges">{{ status_badges(title) }}</div>
+  {{ progress(title) }}
+</li>
+{% endmacro %}
+
 {% macro title_row(title, remove_url=none) %}
 <li>
   {{ kind_icon(title.kind) }}
   {% if title.favorite %}<span class="favorite-mark" title="Favorite">{{ heart() }}</span>{% endif %}
   <a href="/titles/{{ title.id }}">{{ title.name }}</a>
-  <span class="muted">{% set facts = [title.year, title.rating and "★ %d" % title.rating, title.age_restriction and age_label(title.age_restriction), title.ownership != "none" and title.ownership] %}{{ facts | select | join(" · ") }}</span>
+  <span class="muted">{{ title_facts(title) }}</span>
   {{ status_badges(title) }}
   {% if remove_url %}
   <form class="row-action" method="post" action="{{ remove_url }}"><button class="small">Remove</button></form>

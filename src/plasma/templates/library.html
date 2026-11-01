@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import pagination, status_label, title_row %}
+{% from "_macros.html" import pagination, status_label, title_tile %}
 {% block title %}Library · Plasma{% endblock %}
 {% block content %}
 <h1>{% if franchise %}{{ franchise }}{% elif kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
@@ -40,8 +40,8 @@
 
 {% if titles %}
 {{ pagination(pages, "Pages, top") }}
-<ul class="rows">
-  {% for title in titles %}{{ title_row(title) }}{% endfor %}
+<ul class="tiles">
+  {% for title in titles %}{{ title_tile(title, show_kind=not kind) }}{% endfor %}
 </ul>
 {{ pagination(pages, "Pages, bottom") }}
 {% else %}

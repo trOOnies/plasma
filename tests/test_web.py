@@ -302,6 +302,30 @@ def test_image_is_shown_and_served_from_info(client, conn, tmp_path):
     assert client.get("/images/movie/my%20poster.png").content == b"png"
 
 
+def test_library_shows_titles_as_images(client, conn):
+    title_id = add(conn, movie())
+    with conn:
+        library.set_image(conn, title_id, "my poster.png")
+    page = client.get("/titles?kind=movie").text
+    assert '<ul class="tiles">' in page
+    assert 'src="/images/movie/my%20poster.png"' in page
+    assert f'href="/titles/{title_id}"' in page
+
+
+def test_library_keeps_titles_without_an_image(client, conn):
+    add(conn, movie())
+    page = client.get("/titles?kind=movie").text
+    assert 'class="tile-blank"' in page
+    assert "/images/" not in page
+
+
+def test_library_only_shows_the_kind_when_titles_are_mixed(client, conn):
+    add(conn, movie())
+    tab = client.get("/titles?kind=movie").text
+    assert 'class="muted tile-facts"><span class="kind-icon"' not in tab
+    assert 'class="muted tile-facts"><span class="kind-icon"' in client.get("/titles").text
+
+
 def test_titles_without_an_image_have_no_poster(client, conn):
     title_id = add(conn, movie())
     assert "/images/" not in client.get(f"/titles/{title_id}").text
@@ -998,7 +1022,7 @@ def test_pagination_is_mirrored_above_and_below_the_list(client, conn):
     top, bottom = pagination_navs(page)
     strip_label = re.compile(r'aria-label="[^"]*"')
     assert strip_label.sub("", top) == strip_label.sub("", bottom)
-    assert page.index(top) < page.index('<ul class="rows">') < page.index(bottom)
+    assert page.index(top) < page.index('<ul class="tiles">') < page.index(bottom)
     assert "Film 025" in page and "Film 026" not in page
     assert '<span class="button small" aria-disabled="true">Previous</span>' in top
 

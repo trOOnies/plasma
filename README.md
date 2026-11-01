@@ -14,7 +14,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Keep a duration, release date and description for every movie and episode.
 - See what's upcoming and what just came out on the home page.
 - Keep one central list of platforms, split into Streaming Platforms and Game Consoles, and record where each title can be watched or played.
-- Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
+- Browse the Series, Movies and Games tabs as a grid of images. Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
 - Load your titles from YAML files in `info/`.
 
 The app's Help tab explains how to use it.
