@@ -4,7 +4,7 @@ import re
 from datetime import date
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -380,12 +380,40 @@ class ImportEntry(TitleInput):
     def check_episodes_are_listed(self) -> "ImportEntry":
         if self.ownership is not Ownership.NONE and self.kind is not Kind.GAME:
             raise ValueError("ownership only applies to games")
-        if self.watched_through and not self._is_listed(*self.watched_through):
+        if self.watched_through and not self.is_listed(*self.watched_through):
             raise ValueError("watched_through is not an episode listed in seasons")
         for season, number in self.episodes:
-            if not self._is_listed(season, number):
+            if not self.is_listed(season, number):
                 raise ValueError(f"episodes: S{season:02}E{number:02} is not listed in seasons")
         return self
 
-    def _is_listed(self, season: int, number: int) -> bool:
+    def is_listed(self, season: int, number: int) -> bool:
         return 1 <= season <= len(self.seasons) and 1 <= number <= self.seasons[season - 1]
+
+
+class WatchEntry(ImportEntry):
+    """A title in a watch data file. Each item of `watched` is [season, first, last] episode."""
+
+    watched: list[tuple[int, int, int]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_watched_are_listed(self) -> "WatchEntry":
+        for season, first, last in self.watched:
+            if first > last or not (self.is_listed(season, first) and self.is_listed(season, last)):
+                raise ValueError(f"watched: {[season, first, last]} is not listed in seasons")
+        return self
+
+    def watched_episodes(self) -> set[tuple[int, int]]:
+        return {
+            (season, number)
+            for season, first, last in self.watched
+            for number in range(first, last + 1)
+        }
+
+
+class WatchFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plasma_watch_data: Literal[1]
+    exported_on: date | None = None
+    titles: list[WatchEntry]

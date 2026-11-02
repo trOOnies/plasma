@@ -14,19 +14,20 @@ from typing import Annotated, Any
 from urllib.parse import urlencode
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BeforeValidator, ValidationError
 from starlette.background import BackgroundTask
 
-from plasma import library
+from plasma import library, watch_data
 from plasma.db import connect
 from plasma.importer import (
     IMAGE_FOLDERS,
     IMAGES_FOLDER,
     INFO_DIR,
+    ImportFileError,
     InputsCreatedError,
     ensure_inputs,
 )
@@ -1019,6 +1020,41 @@ def remove_from_plan(conn: Conn, plan_id: int, title_id: int) -> Response:
     with conn:
         library.remove_from_plan(conn, plan_id, title_id)
     return redirect(f"/plans/{plan_id}")
+
+
+@router.get("/data", response_class=HTMLResponse)
+def data_page(
+    request: Request, added: int | None = None, updated: int = 0, backup: str = ""
+) -> Response:
+    context = {"added": added, "updated": updated, "backup": backup, "errors": []}
+    return templates.TemplateResponse(request, "data.html", context)
+
+
+@router.get("/data/export")
+def export_data(conn: Conn) -> Response:
+    filename = f"plasma-watch-data-{date.today().isoformat()}.json"
+    return Response(
+        watch_data.dump(watch_data.export(conn)),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/data/load")
+def load_data(request: Request, conn: Conn, file: UploadFile | None = File(None)) -> Response:
+    try:
+        parsed = watch_data.parse(file.file.read() if file else b"")
+    except ImportFileError as error:
+        context = {"added": None, "errors": error.problems}
+        return templates.TemplateResponse(request, "data.html", context, status_code=422)
+    backup = watch_data.backup_database(conn)
+    with conn:
+        added, updated = watch_data.load(conn, parsed)
+    query = urlencode({"added": added, "updated": updated, "backup": backup.name})
+    return redirect(f"/data?{query}")
 
 
 def stop_server() -> None:

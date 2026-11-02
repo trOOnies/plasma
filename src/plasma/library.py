@@ -30,6 +30,7 @@ from plasma.models import (
     PlatformKind,
     Status,
     TitleInput,
+    WatchEntry,
 )
 
 TITLE_SELECT = """
@@ -650,6 +651,51 @@ def set_multiplayer_status(
         "UPDATE titles SET multiplayer_status = ?, updated_at = datetime('now') WHERE id = ?",
         (status.value, title_id),
     )
+
+
+def overwrite_tracking(conn: sqlite3.Connection, title_id: int, entry: WatchEntry) -> None:
+    """Make a title's watch status and ratings match a watch data file.
+
+    The file has no say over seasons it doesn't list, or over episodes if it lists none.
+    """
+    extend_seasons(conn, title_id, entry.seasons)
+    conn.execute(
+        "UPDATE titles SET status = ?, multiplayer_status = ?, watched_on = ?, singleplayer = ?,"
+        " multiplayer = COALESCE(?, multiplayer), updated_at = datetime('now') WHERE id = ?",
+        (
+            entry.status.value,
+            entry.multiplayer_status.value,
+            iso_date(entry.watched_on),
+            entry.singleplayer,
+            entry.multiplayer,
+            title_id,
+        ),
+    )
+    set_rating(conn, title_id, entry.rating)
+    if entry.seasons:
+        _overwrite_episodes(conn, title_id, entry)
+    elif entry.status is Status.COMPLETED:
+        _mark(conn, title_id, "1 = 1", (), True)
+    sync_status(conn, title_id)
+
+
+def _overwrite_episodes(conn: sqlite3.Connection, title_id: int, entry: WatchEntry) -> None:
+    """Episodes that stay watched keep their date. The file doesn't hold any."""
+    watched = entry.watched_episodes()
+    rows = conn.execute("SELECT * FROM episodes WHERE title_id = ?", (title_id,)).fetchall()
+    for row in rows:
+        episode = (row["season"], row["number"])
+        if not entry.is_listed(*episode):
+            continue
+        if (episode in watched) != bool(row["watched"]):
+            conn.execute(
+                "UPDATE episodes SET watched = ?, watched_on = NULL WHERE id = ?",
+                (episode in watched, row["id"]),
+            )
+        details = entry.episodes.get(episode)
+        rating = details.rating if details else None
+        if rating != row["rating"]:
+            set_episode_rating(conn, title_id, *episode, rating)
 
 
 def _mark(conn: sqlite3.Connection, title_id: int, where: str, params: tuple, watched: bool) -> int:

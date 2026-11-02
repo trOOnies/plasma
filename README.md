@@ -16,6 +16,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Keep one central list of platforms, split into Streaming Platforms and Game Consoles, and record where each title can be watched or played.
 - Browse the Series, Movies and Games tabs as a grid of images. Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
 - Load your titles from YAML files in `info/`.
+- Download your watch statuses and ratings to a small file, and load such a file on any machine.
 
 The app's Help tab explains how to use it.
 
@@ -55,6 +56,34 @@ Both of these folders are gitignored:
 
 - `info/` holds your input files.
 - `local/plasma.db` is the database. Set `PLASMA_DB` to keep it somewhere else.
+
+### Watch data files
+
+The Data tab downloads a small JSON file with your watch statuses and ratings, and loads one back in. The file holds every title with a status, rating, watch date or episode progress, and nothing else about it beyond what identifies it:
+
+```json
+{
+  "plasma_watch_data": 1,
+  "exported_on": "2026-11-02",
+  "titles": [
+    {"kind": "movie", "name": "Arrival", "year": 2016, "status": "completed", "rating": 5, "watched_on": "2024-03-02"},
+    {"kind": "series", "name": "The Wire", "year": 2002, "status": "watching", "seasons": [13, 12], "watched": [[1, 1, 13], [2, 1, 4]], "episodes": {"S01E01": {"rating": 4}}},
+    {"kind": "game", "name": "Hades", "year": 2020, "multiplayer": true, "multiplayer_status": "planned"}
+  ]
+}
+```
+
+Each item of `watched` is a season and its first and last watched episodes. Anything blank is left out.
+
+Loading a file overwrites what this machine has:
+
+- Titles in the file take its status, multiplayer status, rating and watch date, even where the file leaves them blank. So do their episodes' watched state and ratings. A title in the file that isn't in your library is added, even one you deleted.
+- Titles that aren't in the file stay as they are, and so do seasons the file doesn't list. Everything else about a title, such as its notes, stays too.
+- Episode watch dates aren't in the file. An episode that stays watched keeps its date, and a newly watched one has none.
+- If anything in the file is invalid, the app lists every problem and changes nothing.
+- A copy of the database is saved first, next to it, as `backup-before-load-<date and time>.db`. To undo a load, stop the app and put that copy in place of `plasma.db`.
+
+Titles are matched the same way as in `info/`, and what a load changes survives `make import`.
 
 ### Files in `info/`
 

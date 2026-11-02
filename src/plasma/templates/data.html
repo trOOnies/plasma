@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Data · Plasma{% endblock %}
+{% block content %}
+<h1>Your data</h1>
+{% if added is not none %}
+<p role="status">Loaded the file: {{ added }} title{{ "" if added == 1 else "s" }} added, {{ updated }} updated.{% if backup %} Your previous data was saved next to your database as <code>{{ backup }}</code>.{% endif %}</p>
+{% endif %}
+
+<h2>Download</h2>
+<p class="muted">A small file with the status, rating and watch progress of every title that has any.</p>
+<a class="button" href="/data/export">Download watch data</a>
+
+<h2>Load</h2>
+<p class="muted">Overwrites the status, rating and watch progress of the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are.</p>
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+<form class="data-load" method="post" action="/data/load" enctype="multipart/form-data"
+      onsubmit="return confirm('Overwrite your data with this file? A copy of your database is saved first.')">
+  <input type="file" name="file" accept=".json,application/json" aria-label="Watch data file" required>
+  <button class="primary">Load file</button>
+</form>
+{% endblock %}
