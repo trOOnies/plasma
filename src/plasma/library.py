@@ -380,6 +380,10 @@ def toggle_favorite(conn: sqlite3.Connection, title_id: int) -> None:
     conn.execute("UPDATE titles SET favorite = NOT favorite WHERE id = ?", (title_id,))
 
 
+def set_favorite(conn: sqlite3.Connection, title_id: int, favorite: bool) -> None:
+    conn.execute("UPDATE titles SET favorite = ? WHERE id = ?", (favorite, title_id))
+
+
 def turn_off_singleplayer(conn: sqlite3.Connection, title_id: int) -> None:
     conn.execute("UPDATE titles SET singleplayer = 0 WHERE id = ?", (title_id,))
 
@@ -969,6 +973,23 @@ def plans_for_title(conn: sqlite3.Connection, title_id: int) -> list[sqlite3.Row
         ") AS included FROM plans p ORDER BY p.name COLLATE NOCASE",
         (title_id,),
     ).fetchall()
+
+
+def get_duo_file(conn: sqlite3.Connection) -> bytes | None:
+    row = conn.execute("SELECT content FROM duo_file").fetchone()
+    return row["content"] if row else None
+
+
+def set_duo_file(conn: sqlite3.Connection, content: bytes) -> None:
+    conn.execute(
+        "INSERT INTO duo_file (id, content) VALUES (1, ?)"
+        " ON CONFLICT (id) DO UPDATE SET content = excluded.content",
+        (content,),
+    )
+
+
+def clear_duo_file(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM duo_file")
 
 
 def planned_count(conn: sqlite3.Connection) -> int:

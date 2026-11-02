@@ -7,11 +7,11 @@
 {% endif %}
 
 <h2>Download</h2>
-<p class="muted">A small file with the status, rating and watch progress of every title that has any.</p>
+<p class="muted">A small file with the status, rating, watch progress, favorite and ownership of every title that has any. It's also what you give someone for their <a href="/duo">Duo</a> tab.</p>
 <a class="button" href="/data/export">Download watch data</a>
 
 <h2>Load</h2>
-<p class="muted">Overwrites the status, rating and watch progress of the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are.</p>
+<p class="muted">Overwrites all of that for the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are. To compare with someone instead, use the <a href="/duo">Duo</a> tab.</p>
 {% if errors %}
 <ul class="errors" role="alert">
   {% for error in errors %}<li>{{ error }}</li>{% endfor %}

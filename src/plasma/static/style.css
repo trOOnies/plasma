@@ -522,5 +522,6 @@ button.star.filled svg { fill: currentColor; }
 button.episode { min-height: 44px; padding: 0; font-variant-numeric: tabular-nums; }
 button.episode.watched { background: var(--plasma) border-box; border-color: transparent; color: var(--accent-text); font-weight: 600; }
 
+.duo-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .data-load { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .data-load input { flex: 1 1 240px; width: auto; }

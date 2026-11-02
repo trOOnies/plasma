@@ -15,10 +15,10 @@ from pydantic import ValidationError
 
 from plasma import library
 from plasma.importer import ImportFileError
-from plasma.models import MultiplayerStatus, Status, WatchFile, describe_errors
+from plasma.models import MultiplayerStatus, Ownership, Status, WatchFile, describe_errors
 
 FORMAT_KEY = "plasma_watch_data"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 LEFT_OUT = (None, Status.NONE.value, [], {})
 NOT_A_WATCH_FILE = "That isn't a Plasma watch data file."
 
@@ -51,6 +51,8 @@ def _has_data(title: sqlite3.Row, watched: list, ratings: dict) -> bool:
         or title["multiplayer_status"] != MultiplayerStatus.NONE.value
         or title["rating"]
         or title["watched_on"]
+        or title["favorite"]
+        or title["ownership"] != Ownership.NONE.value
         or watched
         or ratings
     )
@@ -74,6 +76,8 @@ def export(conn: sqlite3.Connection) -> dict:
             "multiplayer_status": title["multiplayer_status"],
             "rating": title["rating"],
             "watched_on": title["watched_on"],
+            "favorite": True if title["favorite"] else None,
+            "ownership": title["ownership"],
             "seasons": library.season_counts(conn, title["id"]),
             "watched": watched,
             "episodes": ratings,
@@ -116,6 +120,9 @@ def load(conn: sqlite3.Connection, file: WatchFile) -> tuple[int, int]:
             title_id = library.create_title(conn, entry)
             added += 1
         library.overwrite_tracking(conn, title_id, entry)
+        if file.plasma_watch_data >= 2:
+            library.set_favorite(conn, title_id, entry.favorite)
+            library.set_ownership(conn, title_id, entry.ownership)
     return added, updated
 
 

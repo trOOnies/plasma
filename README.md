@@ -17,6 +17,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Browse the Series, Movies and Games tabs as a grid of images. Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
 - Load your titles from YAML files in `info/`.
 - Download your watch statuses and ratings to a small file, and load such a file on any machine.
+- Compare with someone else's file on the Duo tab, to see what you could watch or play together.
 
 The app's Help tab explains how to use it.
 
@@ -59,16 +60,16 @@ Both of these folders are gitignored:
 
 ### Watch data files
 
-The Data tab downloads a small JSON file with your watch statuses and ratings, and loads one back in. The file holds every title with a status, rating, watch date or episode progress, and nothing else about it beyond what identifies it:
+The Data tab downloads a small JSON file with your watch statuses and ratings, and loads one back in. The file holds every title with a status, rating, watch date, episode progress, favorite or ownership, and nothing else about it beyond what identifies it:
 
 ```json
 {
-  "plasma_watch_data": 1,
+  "plasma_watch_data": 2,
   "exported_on": "2026-11-02",
   "titles": [
-    {"kind": "movie", "name": "Arrival", "year": 2016, "status": "completed", "rating": 5, "watched_on": "2024-03-02"},
+    {"kind": "movie", "name": "Arrival", "year": 2016, "status": "completed", "rating": 5, "watched_on": "2024-03-02", "favorite": true},
     {"kind": "series", "name": "The Wire", "year": 2002, "status": "watching", "seasons": [13, 12], "watched": [[1, 1, 13], [2, 1, 4]], "episodes": {"S01E01": {"rating": 4}}},
-    {"kind": "game", "name": "Hades", "year": 2020, "multiplayer": true, "multiplayer_status": "planned"}
+    {"kind": "game", "name": "Hades", "year": 2020, "multiplayer": true, "multiplayer_status": "planned", "ownership": "owned"}
   ]
 }
 ```
@@ -77,13 +78,31 @@ Each item of `watched` is a season and its first and last watched episodes. Anyt
 
 Loading a file overwrites what this machine has:
 
-- Titles in the file take its status, multiplayer status, rating and watch date, even where the file leaves them blank. So do their episodes' watched state and ratings. A title in the file that isn't in your library is added, even one you deleted.
+- Titles in the file take its status, multiplayer status, rating, watch date, favorite and ownership, even where the file leaves them blank. Version 1 files don't hold favorites or ownership, so loading one leaves those alone. So do their episodes' watched state and ratings. A title in the file that isn't in your library is added, even one you deleted.
 - Titles that aren't in the file stay as they are, and so do seasons the file doesn't list. Everything else about a title, such as its notes, stays too.
 - Episode watch dates aren't in the file. An episode that stays watched keeps its date, and a newly watched one has none.
 - If anything in the file is invalid, the app lists every problem and changes nothing.
 - A copy of the database is saved first, next to it, as `backup-before-load-<date and time>.db`. To undo a load, stop the app and put that copy in place of `plasma.db`.
 
 Titles are matched the same way as in `info/`, and what a load changes survives `make import`.
+
+### Duo
+
+The Duo tab takes another person's watch data file and lists what you could enjoy together. It only reads the file, so your library doesn't change. The file is kept in the database until you replace or forget it.
+
+| Section | What's in it |
+| --- | --- |
+| Favorites of you both | Titles you've both marked as favorites |
+| Planned by you both | Titles you've both marked Planned |
+| In progress for you both | Series and games you're both on, with where each of you is up to |
+| Rewatch together | Series and movies you've both completed, unless one of you rated them under 4 stars |
+| They loved, you haven't seen | Series, movies and multiplayer games they rated 4 or 5 stars and you haven't started |
+| You loved, they haven't seen | The same the other way round |
+| Multiplayer games you both own | Owned by both, with multiplayer on for either of you |
+| Other games you both own | The rest of the games you both own |
+| Games you both want | Marked Wanted by both |
+
+Empty sections are hidden. Dropped counts as no status here, so it never rules a title in or out. Titles match by kind, name (ignoring case) and year, and a year missing on one side still matches. A title only they have can appear in They loved, without a link.
 
 ### Files in `info/`
 

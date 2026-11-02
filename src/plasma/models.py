@@ -395,6 +395,7 @@ class WatchEntry(ImportEntry):
     """A title in a watch data file. Each item of `watched` is [season, first, last] episode."""
 
     watched: list[tuple[int, int, int]] = Field(default_factory=list)
+    favorite: bool = False
 
     @model_validator(mode="after")
     def check_watched_are_listed(self) -> "WatchEntry":
@@ -410,10 +411,19 @@ class WatchEntry(ImportEntry):
             for number in range(first, last + 1)
         }
 
+    def next_episode(self) -> tuple[int, int] | None:
+        watched = self.watched_episodes()
+        for season, count in enumerate(self.seasons, start=1):
+            for number in range(1, count + 1):
+                if (season, number) not in watched:
+                    return season, number
+        return None
+
 
 class WatchFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    plasma_watch_data: Literal[1]
+    # Version 1 files say nothing about favorites and ownership.
+    plasma_watch_data: Literal[1, 2]
     exported_on: date | None = None
     titles: list[WatchEntry]

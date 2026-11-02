@@ -8,7 +8,7 @@ from plasma.models import PlatformKind, guess_platform_kind
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
         CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
@@ -121,6 +121,12 @@ CREATE TABLE IF NOT EXISTS cleared_platform_fields (
     platform_id INTEGER NOT NULL REFERENCES platforms (id) ON DELETE CASCADE,
     field TEXT NOT NULL,
     PRIMARY KEY (platform_id, field)
+);
+
+-- The other person's watch data file on the Duo tab. There is only ever one.
+CREATE TABLE IF NOT EXISTS duo_file (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    content BLOB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS trimmed_seasons (

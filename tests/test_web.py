@@ -497,7 +497,7 @@ def test_home_links_to_the_next_episode(client, conn):
 def test_nav_order_and_no_library_tab(client):
     page = client.get("/").text
     nav = page.split("<nav>")[1].split("</nav>")[0]
-    tabs = ["Series", "Movies", "Games", "Plans", "Platforms", "Data", "Help"]
+    tabs = ["Series", "Movies", "Games", "Plans", "Duo", "Platforms", "Data", "Help"]
     assert re.findall(r">(\w+)</a>", nav) == tabs
     assert page.index("+ Series") < page.index("+ Movie") < page.index("+ Game")
 

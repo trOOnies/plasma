@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BeforeValidator, ValidationError
 from starlette.background import BackgroundTask
 
-from plasma import library, watch_data
+from plasma import duo, library, watch_data
 from plasma.db import connect
 from plasma.importer import (
     IMAGE_FOLDERS,
@@ -1055,6 +1055,46 @@ def load_data(request: Request, conn: Conn, file: UploadFile | None = File(None)
         added, updated = watch_data.load(conn, parsed)
     query = urlencode({"added": added, "updated": updated, "backup": backup.name})
     return redirect(f"/data?{query}")
+
+
+def render_duo(
+    request: Request,
+    conn: sqlite3.Connection,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    content = library.get_duo_file(conn)
+    file = watch_data.parse(content) if content else None
+    context = {
+        "file": file,
+        "sections": duo.suggestions(conn, file) if file else [],
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(request, "duo.html", context, status_code=status_code)
+
+
+@router.get("/duo", response_class=HTMLResponse)
+def duo_page(request: Request, conn: Conn) -> Response:
+    return render_duo(request, conn)
+
+
+@router.post("/duo/file")
+def set_duo_file(request: Request, conn: Conn, file: UploadFile | None = File(None)) -> Response:
+    content = file.file.read() if file else b""
+    try:
+        watch_data.parse(content)
+    except ImportFileError as error:
+        return render_duo(request, conn, error.problems, 422)
+    with conn:
+        library.set_duo_file(conn, content)
+    return redirect("/duo")
+
+
+@router.post("/duo/file/delete")
+def delete_duo_file(conn: Conn) -> Response:
+    with conn:
+        library.clear_duo_file(conn)
+    return redirect("/duo")
 
 
 def stop_server() -> None:

@@ -8,7 +8,7 @@ from conftest import movie, series
 from plasma import library, watch_data
 from plasma.db import connect
 from plasma.importer import ImportFileError, import_entries
-from plasma.models import ImportEntry, Kind, MultiplayerStatus, Status, TitleInput
+from plasma.models import ImportEntry, Kind, MultiplayerStatus, Ownership, Status, TitleInput
 
 
 def add(conn, data) -> int:
@@ -40,7 +40,7 @@ def test_export_keeps_only_titles_with_data_and_leaves_blanks_out(conn):
     add(conn, movie("Untouched", year=2000, notes="private"))
     add(conn, movie("Seen", year=2016, status=Status.COMPLETED, rating=5, watched_on="2024-03-02"))
     data = watch_data.export(conn)
-    assert data["plasma_watch_data"] == 1
+    assert data["plasma_watch_data"] == 2
     assert data["titles"] == [
         {
             "kind": "movie",
@@ -96,6 +96,39 @@ def test_export_can_be_loaded_into_an_empty_library(conn, tmp_path):
     assert title["status"] == Status.WATCHING.value
     assert library.get_episode(other, title["id"], 1, 1)["rating"] == 5
     other.close()
+
+
+def test_favorites_and_ownership_travel_in_the_file(conn, tmp_path):
+    with conn:
+        library.toggle_favorite(conn, library.create_title(conn, movie("Liked")))
+        library.set_ownership(conn, library.create_title(conn, game("Boxed")), Ownership.OWNED)
+    data = watch_data.export(conn)
+    assert [t["name"] for t in data["titles"]] == ["Boxed", "Liked"]
+
+    other = connect(tmp_path / "other.db")
+    apply(other, watch_data.dump(data).encode())
+    assert watch_data.export(other)["titles"] == data["titles"]
+    other.close()
+
+
+def test_a_newer_file_clears_favorite_and_ownership_it_leaves_blank(conn):
+    title_id = add(conn, game("Boxed"))
+    with conn:
+        library.toggle_favorite(conn, title_id)
+        library.set_ownership(conn, title_id, Ownership.OWNED)
+    apply(conn, b'{"plasma_watch_data": 2, "titles": [{"kind": "game", "name": "Boxed"}]}')
+    title = library.get_title(conn, title_id)
+    assert (title["favorite"], title["ownership"]) == (0, "none")
+
+
+def test_an_older_file_leaves_favorite_and_ownership_alone(conn):
+    title_id = add(conn, game("Boxed"))
+    with conn:
+        library.toggle_favorite(conn, title_id)
+        library.set_ownership(conn, title_id, Ownership.OWNED)
+    apply(conn, file_with({"kind": "game", "name": "Boxed", "rating": 3}))
+    title = library.get_title(conn, title_id)
+    assert (title["favorite"], title["ownership"], title["rating"]) == (1, "owned", 3)
 
 
 def test_load_overwrites_tracking_and_leaves_the_rest(conn):
@@ -226,7 +259,7 @@ def test_parse_reports_every_invalid_title():
 
 def test_parse_rejects_a_newer_format():
     with pytest.raises(ImportFileError):
-        watch_data.parse(b'{"plasma_watch_data": 2, "titles": []}')
+        watch_data.parse(b'{"plasma_watch_data": 3, "titles": []}')
 
 
 def test_data_page_is_in_the_navigation_and_help(client):

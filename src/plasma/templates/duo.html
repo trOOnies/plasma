@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import kind_icon %}
+{% block title %}Duo · Plasma{% endblock %}
+{% block content %}
+<h1>Duo</h1>
+<p class="muted">See what you could watch or play with someone. This only compares, so your library doesn't change.</p>
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if file %}
+<div class="duo-file">
+  <span>Comparing with {{ file.titles | length }} title{{ "" if file.titles | length == 1 else "s" }}{% if file.exported_on %} from a file made on {{ file.exported_on.isoformat() | long_date }}{% endif %}.</span>
+  <form method="post" action="/duo/file/delete"
+        onsubmit="return confirm('Forget this file? Your own library stays as it is.')">
+    <button class="small">Forget file</button>
+  </form>
+</div>
+{% if file.plasma_watch_data < 2 %}
+<p class="help-tip">This file is from an older version, so it doesn't say what they favorited or own. Ask them for a new one.</p>
+{% endif %}
+{% else %}
+<p>Ask the other person for the file from their Data tab, then add it here.</p>
+{% endif %}
+
+<form class="data-load" method="post" action="/duo/file" enctype="multipart/form-data">
+  <input type="file" name="file" accept=".json,application/json" aria-label="Their watch data file" required>
+  <button class="primary">{{ "Replace file" if file else "Add file" }}</button>
+</form>
+
+{% for section in sections %}
+<h2>{{ section.heading }} <span class="muted">{{ section.items | length }}</span></h2>
+<p class="muted">{{ section.blurb }}</p>
+<ul class="rows">
+  {% for item in section.items %}
+  {% set pair = item.pair %}
+  <li>
+    {{ kind_icon(pair.kind) }}
+    {% if pair.title_id %}<a href="/titles/{{ pair.title_id }}">{{ pair.name }}</a>{% else %}<strong>{{ pair.name }}</strong>{% endif %}
+    {% if pair.year %}<span class="muted">{{ pair.year }}</span>{% endif %}
+    {% if item.note %}<span class="muted">· {{ item.note }}</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+{% if file %}<p class="muted">Nothing in common yet. Mark a few more favorites, plans or ratings, then swap new files.</p>{% endif %}
+{% endfor %}
+{% endblock %}
