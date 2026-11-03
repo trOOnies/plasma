@@ -1031,7 +1031,7 @@ def render_data(
     loaded: dict | None = None,
     status_code: int = 200,
 ) -> Response:
-    """The Data tab: Duo first, then downloading and loading your own file."""
+    """The Duo tab: Duo first, then exporting and importing your own file."""
     content = library.get_duo_file(conn)
     file = watch_data.parse(content) if content else None
     sections = duo.suggestions(conn, file) if file else []
@@ -1048,11 +1048,11 @@ def render_data(
         "load_errors": load_errors or [],
         "loaded": loaded,
     }
-    return templates.TemplateResponse(request, "data.html", context, status_code=status_code)
+    return templates.TemplateResponse(request, "duo.html", context, status_code=status_code)
 
 
-@router.get("/data", response_class=HTMLResponse)
-def data_page(
+@router.get("/duo", response_class=HTMLResponse)
+def duo_page(
     request: Request,
     conn: Conn,
     added: int | None = None,
@@ -1086,13 +1086,13 @@ def load_data(request: Request, conn: Conn, file: UploadFile | None = File(None)
     with conn:
         added, updated = watch_data.load(conn, parsed)
     query = urlencode({"added": added, "updated": updated, "backup": backup.name})
-    return redirect(f"/data?{query}#your-data")
+    return redirect(f"/duo?{query}#your-data")
 
 
-@router.get("/duo")
-def duo_page() -> Response:
-    """Duo used to be its own tab, so old links still land on it."""
-    return redirect("/data#duo")
+@router.get("/data")
+def data_page() -> Response:
+    """Export and import used to have their own Data tab, so old links still land on them."""
+    return redirect("/duo#your-data")
 
 
 @router.post("/duo/file")
@@ -1104,14 +1104,14 @@ def set_duo_file(request: Request, conn: Conn, file: UploadFile | None = File(No
         return render_data(request, conn, duo_errors=error.problems, status_code=422)
     with conn:
         library.set_duo_file(conn, content)
-    return redirect("/data#duo")
+    return redirect("/duo")
 
 
 @router.post("/duo/file/delete")
 def delete_duo_file(conn: Conn) -> Response:
     with conn:
         library.clear_duo_file(conn)
-    return redirect("/data#duo")
+    return redirect("/duo")
 
 
 def stop_server() -> None:

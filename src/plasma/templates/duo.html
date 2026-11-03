@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import kind_icon %}
-{% block title %}Duo & Data · Plasma{% endblock %}
+{% block title %}Duo · Plasma{% endblock %}
 {% block content %}
 {% set icons = {
   "Favorites of you both": "💞",
@@ -51,7 +51,7 @@
   <p class="help-tip">This file is from an older version, so it doesn't say what they favorited or own. Ask them for a new one.</p>
   {% endif %}
   {% else %}
-  <p>Ask the other person for the file from their <a href="#your-data">Download</a> button below, then add it here.</p>
+  <p>Ask the other person for the file from their <a href="#your-data">Export</a> button below, then add it here.</p>
   {% endif %}
 
   <form class="data-load" method="post" action="/duo/file" enctype="multipart/form-data">
@@ -91,16 +91,16 @@
 <section id="your-data" class="your-data" aria-labelledby="data-heading">
   <h2 id="data-heading" class="section-title">Your data</h2>
   {% if loaded %}
-  <p role="status">Loaded the file: {{ loaded.added }} title{{ "" if loaded.added == 1 else "s" }} added, {{ loaded.updated }} updated.{% if loaded.backup %} Your previous data was saved next to your database as <code>{{ loaded.backup }}</code>.{% endif %}</p>
+  <p role="status">Imported the file: {{ loaded.added }} title{{ "" if loaded.added == 1 else "s" }} added, {{ loaded.updated }} updated.{% if loaded.backup %} Your previous data was saved next to your database as <code>{{ loaded.backup }}</code>.{% endif %}</p>
   {% endif %}
   <div class="data-grid">
     <div class="card data-card">
-      <h3>⬇️ Download</h3>
+      <h3>⬇️ Export</h3>
       <p class="muted">A small file with the status, rating, watch progress, favorite and ownership of every title that has any. It's also what you give someone for their Duo.</p>
-      <a class="button" href="/data/export">Download watch data</a>
+      <a class="button" href="/data/export">Export watch data</a>
     </div>
     <div class="card data-card">
-      <h3>⬆️ Load</h3>
+      <h3>⬆️ Import</h3>
       <p class="muted">Overwrites all of that for the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are.</p>
       {% if load_errors %}
       <ul class="errors" role="alert">
@@ -110,7 +110,7 @@
       <form class="data-load" method="post" action="/data/load" enctype="multipart/form-data"
             onsubmit="return confirm('Overwrite your data with this file? A copy of your database is saved first.')">
         <input type="file" name="file" accept=".json,application/json" aria-label="Watch data file" required>
-        <button class="primary">Load file</button>
+        <button class="primary">Import file</button>
       </form>
     </div>
   </div>

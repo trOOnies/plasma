@@ -263,9 +263,9 @@ def test_parse_rejects_a_newer_format():
 
 
 def test_data_page_is_in_the_navigation_and_help(client):
-    assert 'href="/data"' in client.get("/").text.split("</nav>")[0]
+    assert 'href="/duo"' in client.get("/").text.split("</nav>")[0]
     assert 'id="data"' in client.get("/help").text
-    assert "Download watch data" in client.get("/data").text
+    assert "Export watch data" in client.get("/duo").text
 
 
 def test_download_is_a_json_attachment(client, conn):

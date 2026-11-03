@@ -208,7 +208,7 @@ def test_best_rated_come_first(conn):
 
 
 def test_duo_asks_for_a_file_first(client):
-    page = client.get("/data").text
+    page = client.get("/duo").text
     assert "Add file" in page and "Forget file" not in page
 
 
@@ -221,8 +221,8 @@ def test_duo_file_is_kept_and_shows_sections_without_changing_the_library(client
 
     response = client.post("/duo/file", files={"file": ("them.json", file)})
 
-    assert response.status_code == 303 and response.headers["location"] == "/data#duo"
-    page = client.get("/data").text
+    assert response.status_code == 303 and response.headers["location"] == "/duo"
+    page = client.get("/duo").text
     assert "Favorites of you both" in page
     assert f'href="/titles/{title_id}"' in page
     assert "<strong>Stranger</strong>" in page
@@ -249,33 +249,33 @@ def test_replacing_and_forgetting_the_duo_file(client, conn):
         client.post("/duo/file", files={"file": ("them.json", file)})
     assert library.get_duo_file(conn) == file
 
-    assert client.post("/duo/file/delete").headers["location"] == "/data#duo"
+    assert client.post("/duo/file/delete").headers["location"] == "/duo"
     assert library.get_duo_file(conn) is None
-    assert "Add file" in client.get("/data").text
+    assert "Add file" in client.get("/duo").text
 
 
 def test_older_file_is_flagged(client):
     client.post("/duo/file", files={"file": ("old.json", content(version=1))})
-    assert "older version" in client.get("/data").text
+    assert "older version" in client.get("/duo").text
 
 
 def test_no_overlap_says_so(client):
     client.post("/duo/file", files={"file": ("them.json", content())})
-    assert "Nothing in common yet" in client.get("/data").text
+    assert "Nothing in common yet" in client.get("/duo").text
 
 
 def test_duo_is_explained_in_help(client):
     assert 'id="duo"' in client.get("/help").text
 
 
-def test_old_duo_link_lands_on_the_data_tab(client):
-    response = client.get("/duo")
-    assert response.status_code == 303 and response.headers["location"] == "/data#duo"
+def test_old_data_link_lands_on_export_and_import(client):
+    response = client.get("/data")
+    assert response.status_code == 303 and response.headers["location"] == "/duo#your-data"
 
 
-def test_data_tab_shows_duo_before_download_and_load(client):
-    page = client.get("/data").text
-    assert page.index('id="duo"') < page.index("Download watch data") < page.index("Load file")
+def test_duo_tab_shows_duo_before_export_and_import(client):
+    page = client.get("/duo").text
+    assert page.index('id="duo"') < page.index("Export watch data") < page.index("Import file")
 
 
 def test_duo_errors_stay_out_of_the_load_card(client):
