@@ -873,8 +873,11 @@ def test_pages_are_never_cached_so_they_cannot_show_old_data(client, conn):
         assert client.get(url).headers["cache-control"] == "no-store"
 
 
-def test_images_and_styles_can_still_be_cached(client):
-    assert "cache-control" not in client.get("/static/style.css").headers
+def test_styles_are_cached_but_checked_so_changes_show_up(client):
+    response = client.get("/static/style.css")
+    assert response.headers["cache-control"] == "no-cache"
+    again = client.get("/static/style.css", headers={"If-None-Match": response.headers["etag"]})
+    assert again.status_code == 304
 
 
 def test_exit_button_is_on_every_page(client):

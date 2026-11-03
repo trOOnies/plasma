@@ -1140,6 +1140,10 @@ def create_app(db_path: Path | str | None = None, info_dir: Path = INFO_DIR) -> 
         response = await call_next(request)
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path.startswith("/static/"):
+            # Check back every time, so a changed stylesheet shows up without a hard refresh.
+            # An unchanged file is only a quick 304 thanks to its ETag.
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.exception_handler(404)
