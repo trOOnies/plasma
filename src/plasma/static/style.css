@@ -522,6 +522,130 @@ button.star.filled svg { fill: currentColor; }
 button.episode { min-height: 44px; padding: 0; font-variant-numeric: tabular-nums; }
 button.episode.watched { background: var(--plasma) border-box; border-color: transparent; color: var(--accent-text); font-weight: 600; }
 
-.duo-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.duo {
+  position: relative;
+  padding: 22px;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--plasma) border-box;
+  box-shadow: 0 0 40px var(--glow-pink), 0 0 80px var(--glow-blue);
+  scroll-margin-top: 12px;
+}
+
+.duo-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
+.duo-intro { flex: 1 1 260px; min-width: 0; }
+.duo-intro p { margin: 4px 0 0; }
+
+.duo-title {
+  margin: 0;
+  font-size: 2.2rem;
+  background: var(--plasma);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: duo-shimmer 6s ease-in-out infinite alternate;
+}
+
+.duo-pair { display: flex; align-items: center; }
+
+.duo-avatar {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5aa2ff, #2a5be0);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.duo-avatar-them { background: linear-gradient(135deg, #ff5fc4, #c9189a); }
+
+.duo-spark {
+  z-index: 1;
+  margin: 0 -10px;
+  color: var(--accent);
+  font-size: 1.4rem;
+  text-shadow: 0 0 12px var(--accent);
+  animation: duo-pulse 2.4s ease-in-out infinite;
+}
+
+.duo-score {
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  text-align: center;
+}
+
+.duo-score strong {
+  display: block;
+  background: var(--plasma);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.duo-score span { color: var(--muted); font-size: 0.85rem; }
+
+.duo-file { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
 .data-load { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.data-load input { flex: 1 1 240px; width: auto; }
+.data-load input { flex: 1 1 200px; width: auto; min-width: 0; }
+
+.duo-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.duo-section {
+  padding: 14px 16px 6px;
+  background: var(--surface-raised);
+  border-radius: 12px;
+  border-top: 3px solid;
+  border-image: var(--plasma) 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duo-section:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--glow-pink); }
+.duo-section header { display: flex; align-items: center; gap: 10px; }
+.duo-section h2 { flex: 1; margin: 0; font-size: 1rem; }
+.duo-section > p { margin: 4px 0 4px; font-size: 0.85rem; }
+.duo-section .rows li:last-child { border-bottom: 0; }
+.duo-icon { font-size: 1.3rem; line-height: 1; }
+
+.duo-count {
+  min-width: 28px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--plasma);
+  color: var(--accent-text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.duo-note { flex-basis: 100%; }
+
+@keyframes duo-shimmer { from { background-position: 0 50%; } to { background-position: 100% 50%; } }
+@keyframes duo-pulse { 50% { transform: scale(1.25) rotate(20deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .duo-title, .duo-spark { animation: none; }
+  .duo-section { transition: none; }
+  .duo-section:hover { transform: none; }
+}
+
+.your-data { margin-top: 36px; scroll-margin-top: 12px; }
+.section-title { font-size: 1.4rem; }
+.data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.data-card { display: flex; flex-direction: column; align-items: flex-start; }
+.data-card h3 { margin: 0; }
+.data-card p { flex: 1; }
+.data-card .data-load { width: 100%; margin-bottom: 0; }
+.data-card .errors { max-width: none; }

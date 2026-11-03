@@ -1,25 +1,118 @@
 {% extends "base.html" %}
-{% block title %}Data · Plasma{% endblock %}
+{% from "_macros.html" import kind_icon %}
+{% block title %}Duo & Data · Plasma{% endblock %}
 {% block content %}
-<h1>Your data</h1>
-{% if added is not none %}
-<p role="status">Loaded the file: {{ added }} title{{ "" if added == 1 else "s" }} added, {{ updated }} updated.{% if backup %} Your previous data was saved next to your database as <code>{{ backup }}</code>.{% endif %}</p>
-{% endif %}
+{% set icons = {
+  "Favorites of you both": "💞",
+  "Planned by you both": "📌",
+  "In progress for you both": "⏯️",
+  "Rewatch together": "🔁",
+  "They loved, you haven't seen": "🌟",
+  "You loved, they haven't seen": "🎁",
+  "Multiplayer games you both own": "🎮",
+  "Other games you both own": "🕹️",
+  "Games you both want": "🛒",
+} %}
 
-<h2>Download</h2>
-<p class="muted">A small file with the status, rating, watch progress, favorite and ownership of every title that has any. It's also what you give someone for their <a href="/duo">Duo</a> tab.</p>
-<a class="button" href="/data/export">Download watch data</a>
+<section class="duo" id="duo" aria-labelledby="duo-heading">
+  <div class="duo-hero">
+    <div class="duo-pair" aria-hidden="true">
+      <span class="duo-avatar">You</span>
+      <span class="duo-spark">✦</span>
+      <span class="duo-avatar duo-avatar-them">Them</span>
+    </div>
+    <div class="duo-intro">
+      <h1 id="duo-heading" class="duo-title">Duo</h1>
+      <p class="muted">See what you could watch or play with someone. This only compares, so your library doesn't change.</p>
+    </div>
+    {% if file %}
+    <div class="duo-score">
+      <strong>{{ matches }}</strong>
+      <span>match{{ "" if matches == 1 else "es" }}</span>
+    </div>
+    {% endif %}
+  </div>
 
-<h2>Load</h2>
-<p class="muted">Overwrites all of that for the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are. To compare with someone instead, use the <a href="/duo">Duo</a> tab.</p>
-{% if errors %}
-<ul class="errors" role="alert">
-  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
-</ul>
-{% endif %}
-<form class="data-load" method="post" action="/data/load" enctype="multipart/form-data"
-      onsubmit="return confirm('Overwrite your data with this file? A copy of your database is saved first.')">
-  <input type="file" name="file" accept=".json,application/json" aria-label="Watch data file" required>
-  <button class="primary">Load file</button>
-</form>
+  {% if duo_errors %}
+  <ul class="errors" role="alert">
+    {% for error in duo_errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if file %}
+  <div class="duo-file">
+    <span>Comparing with {{ file.titles | length }} title{{ "" if file.titles | length == 1 else "s" }}{% if file.exported_on %} from a file made on {{ file.exported_on.isoformat() | long_date }}{% endif %}.</span>
+    <form method="post" action="/duo/file/delete"
+          onsubmit="return confirm('Forget this file? Your own library stays as it is.')">
+      <button class="small">Forget file</button>
+    </form>
+  </div>
+  {% if file.plasma_watch_data < 2 %}
+  <p class="help-tip">This file is from an older version, so it doesn't say what they favorited or own. Ask them for a new one.</p>
+  {% endif %}
+  {% else %}
+  <p>Ask the other person for the file from their <a href="#your-data">Download</a> button below, then add it here.</p>
+  {% endif %}
+
+  <form class="data-load" method="post" action="/duo/file" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".json,application/json" aria-label="Their watch data file" required>
+    <button class="primary">{{ "Replace file" if file else "Add file" }}</button>
+  </form>
+
+  {% if sections %}
+  <div class="duo-sections">
+    {% for section in sections %}
+    <article class="duo-section">
+      <header>
+        <span class="duo-icon" aria-hidden="true">{{ icons.get(section.heading, "✨") }}</span>
+        <h2>{{ section.heading }}</h2>
+        <span class="duo-count">{{ section.items | length }}</span>
+      </header>
+      <p class="muted">{{ section.blurb }}</p>
+      <ul class="rows">
+        {% for item in section.items %}
+        {% set pair = item.pair %}
+        <li>
+          {{ kind_icon(pair.kind) }}
+          {% if pair.title_id %}<a href="/titles/{{ pair.title_id }}">{{ pair.name }}</a>{% else %}<strong>{{ pair.name }}</strong>{% endif %}
+          {% if pair.year %}<span class="muted">{{ pair.year }}</span>{% endif %}
+          {% if item.note %}<span class="muted duo-note">{{ item.note }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </article>
+    {% endfor %}
+  </div>
+  {% elif file %}
+  <p class="muted">Nothing in common yet. Mark a few more favorites, plans or ratings, then swap new files.</p>
+  {% endif %}
+</section>
+
+<section id="your-data" class="your-data" aria-labelledby="data-heading">
+  <h2 id="data-heading" class="section-title">Your data</h2>
+  {% if loaded %}
+  <p role="status">Loaded the file: {{ loaded.added }} title{{ "" if loaded.added == 1 else "s" }} added, {{ loaded.updated }} updated.{% if loaded.backup %} Your previous data was saved next to your database as <code>{{ loaded.backup }}</code>.{% endif %}</p>
+  {% endif %}
+  <div class="data-grid">
+    <div class="card data-card">
+      <h3>⬇️ Download</h3>
+      <p class="muted">A small file with the status, rating, watch progress, favorite and ownership of every title that has any. It's also what you give someone for their Duo.</p>
+      <a class="button" href="/data/export">Download watch data</a>
+    </div>
+    <div class="card data-card">
+      <h3>⬆️ Load</h3>
+      <p class="muted">Overwrites all of that for the titles in the file, and adds the ones you don't have. Titles that aren't in the file stay as they are.</p>
+      {% if load_errors %}
+      <ul class="errors" role="alert">
+        {% for error in load_errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      <form class="data-load" method="post" action="/data/load" enctype="multipart/form-data"
+            onsubmit="return confirm('Overwrite your data with this file? A copy of your database is saved first.')">
+        <input type="file" name="file" accept=".json,application/json" aria-label="Watch data file" required>
+        <button class="primary">Load file</button>
+      </form>
+    </div>
+  </div>
+</section>
 {% endblock %}

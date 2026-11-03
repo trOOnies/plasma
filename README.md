@@ -17,7 +17,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Browse the Series, Movies and Games tabs as a grid of images. Mark favorites, which go to the top of their tab, and show an image on each title's and platform's page.
 - Load your titles from YAML files in `info/`.
 - Download your watch statuses and ratings to a small file, and load such a file on any machine.
-- Compare with someone else's file on the Duo tab, to see what you could watch or play together.
+- Compare with someone else's file on the Duo & Data tab, to see what you could watch or play together.
 
 The app's Help tab explains how to use it.
 
@@ -60,7 +60,7 @@ Both of these folders are gitignored:
 
 ### Watch data files
 
-The Data tab downloads a small JSON file with your watch statuses and ratings, and loads one back in. The file holds every title with a status, rating, watch date, episode progress, favorite or ownership, and nothing else about it beyond what identifies it:
+The Duo & Data tab's Download and Load buttons, side by side below Duo, download a small JSON file with your watch statuses and ratings, and load one back in. The file holds every title with a status, rating, watch date, episode progress, favorite or ownership, and nothing else about it beyond what identifies it:
 
 ```json
 {
@@ -88,7 +88,7 @@ Titles are matched the same way as in `info/`, and what a load changes survives 
 
 ### Duo
 
-The Duo tab takes another person's watch data file and lists what you could enjoy together. It only reads the file, so your library doesn't change. The file is kept in the database until you replace or forget it.
+Duo, at the top of the Duo & Data tab, takes another person's watch data file and lists what you could enjoy together. It only reads the file, so your library doesn't change. The file is kept in the database until you replace or forget it.
 
 | Section | What's in it |
 | --- | --- |

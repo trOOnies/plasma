@@ -1022,12 +1022,45 @@ def remove_from_plan(conn: Conn, plan_id: int, title_id: int) -> Response:
     return redirect(f"/plans/{plan_id}")
 
 
+def render_data(
+    request: Request,
+    conn: sqlite3.Connection,
+    *,
+    duo_errors: list[str] | None = None,
+    load_errors: list[str] | None = None,
+    loaded: dict | None = None,
+    status_code: int = 200,
+) -> Response:
+    """The Data tab: Duo first, then downloading and loading your own file."""
+    content = library.get_duo_file(conn)
+    file = watch_data.parse(content) if content else None
+    sections = duo.suggestions(conn, file) if file else []
+    matches = {
+        (item.pair.kind, item.pair.name.casefold(), item.pair.year)
+        for section in sections
+        for item in section.items
+    }
+    context = {
+        "file": file,
+        "sections": sections,
+        "matches": len(matches),
+        "duo_errors": duo_errors or [],
+        "load_errors": load_errors or [],
+        "loaded": loaded,
+    }
+    return templates.TemplateResponse(request, "data.html", context, status_code=status_code)
+
+
 @router.get("/data", response_class=HTMLResponse)
 def data_page(
-    request: Request, added: int | None = None, updated: int = 0, backup: str = ""
+    request: Request,
+    conn: Conn,
+    added: int | None = None,
+    updated: int = 0,
+    backup: str = "",
 ) -> Response:
-    context = {"added": added, "updated": updated, "backup": backup, "errors": []}
-    return templates.TemplateResponse(request, "data.html", context)
+    loaded = None if added is None else {"added": added, "updated": updated, "backup": backup}
+    return render_data(request, conn, loaded=loaded)
 
 
 @router.get("/data/export")
@@ -1048,34 +1081,18 @@ def load_data(request: Request, conn: Conn, file: UploadFile | None = File(None)
     try:
         parsed = watch_data.parse(file.file.read() if file else b"")
     except ImportFileError as error:
-        context = {"added": None, "errors": error.problems}
-        return templates.TemplateResponse(request, "data.html", context, status_code=422)
+        return render_data(request, conn, load_errors=error.problems, status_code=422)
     backup = watch_data.backup_database(conn)
     with conn:
         added, updated = watch_data.load(conn, parsed)
     query = urlencode({"added": added, "updated": updated, "backup": backup.name})
-    return redirect(f"/data?{query}")
+    return redirect(f"/data?{query}#your-data")
 
 
-def render_duo(
-    request: Request,
-    conn: sqlite3.Connection,
-    errors: list[str] | None = None,
-    status_code: int = 200,
-) -> Response:
-    content = library.get_duo_file(conn)
-    file = watch_data.parse(content) if content else None
-    context = {
-        "file": file,
-        "sections": duo.suggestions(conn, file) if file else [],
-        "errors": errors or [],
-    }
-    return templates.TemplateResponse(request, "duo.html", context, status_code=status_code)
-
-
-@router.get("/duo", response_class=HTMLResponse)
-def duo_page(request: Request, conn: Conn) -> Response:
-    return render_duo(request, conn)
+@router.get("/duo")
+def duo_page() -> Response:
+    """Duo used to be its own tab, so old links still land on it."""
+    return redirect("/data#duo")
 
 
 @router.post("/duo/file")
@@ -1084,17 +1101,17 @@ def set_duo_file(request: Request, conn: Conn, file: UploadFile | None = File(No
     try:
         watch_data.parse(content)
     except ImportFileError as error:
-        return render_duo(request, conn, error.problems, 422)
+        return render_data(request, conn, duo_errors=error.problems, status_code=422)
     with conn:
         library.set_duo_file(conn, content)
-    return redirect("/duo")
+    return redirect("/data#duo")
 
 
 @router.post("/duo/file/delete")
 def delete_duo_file(conn: Conn) -> Response:
     with conn:
         library.clear_duo_file(conn)
-    return redirect("/duo")
+    return redirect("/data#duo")
 
 
 def stop_server() -> None:
