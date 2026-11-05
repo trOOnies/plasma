@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import unicodedata
 from pathlib import Path
 
 from plasma.models import PlatformKind, guess_platform_kind
@@ -174,6 +175,14 @@ COPIED_COLUMNS = (
 )
 
 
+def fold(text: str | None) -> str | None:
+    """Text without accents or case, so "pokemon" matches "Pokémon" and "POKÉMON"."""
+    if text is None:
+        return None
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(char for char in decomposed if not unicodedata.combining(char)).casefold()
+
+
 def default_path() -> Path:
     return Path(os.environ.get("PLASMA_DB", DEFAULT_PATH))
 
@@ -188,6 +197,7 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.create_function("fold", 1, fold, deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     if _version(conn) < SCHEMA_VERSION:
         if _has_table(conn, "titles"):

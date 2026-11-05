@@ -19,6 +19,7 @@ from collections.abc import Iterable
 from datetime import date, timedelta
 from itertools import zip_longest
 
+from plasma.db import fold
 from plasma.models import (
     AgeRestriction,
     Details,
@@ -144,8 +145,9 @@ def list_titles(
         clauses.append("t.age_restriction = ?")
         params.append(age_restriction.value)
     if query:
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        clauses.append("t.name LIKE ? ESCAPE '\\'")
+        folded = fold(query) or ""
+        escaped = folded.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        clauses.append("fold(t.name) LIKE ? ESCAPE '\\'")
         params.append(f"%{escaped}%")
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     return conn.execute(f"{TITLE_SELECT}{where} GROUP BY t.id ORDER BY {order}", params).fetchall()

@@ -665,6 +665,20 @@ def test_list_filters(conn):
     assert names(kind=Kind.MOVIE, status=Status.PLANNED, query="ali") == ["Aliens"]
 
 
+def test_search_ignores_accents_and_case(conn):
+    library.create_title(conn, movie("Pokémon: The First Movie"))
+    library.create_title(conn, movie("AMÉLIE"))
+    library.create_title(conn, movie("Fargo"))
+
+    def names(query):
+        return [row["name"] for row in library.list_titles(conn, query=query)]
+
+    assert names("pokemon") == ["Pokémon: The First Movie"]
+    assert names("POKÉMON") == ["Pokémon: The First Movie"]
+    assert names("amélie") == ["AMÉLIE"]
+    assert names("amelie") == ["AMÉLIE"]
+
+
 def test_search_treats_wildcards_literally(conn):
     library.create_title(conn, movie("100% Wolf"))
     library.create_title(conn, movie("Plain"))
