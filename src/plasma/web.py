@@ -1,6 +1,7 @@
 """FastAPI app serving the server-rendered web UI."""
 
 import argparse
+import hashlib
 import multiprocessing
 import os
 import signal
@@ -54,7 +55,7 @@ from plasma.models import (
 )
 
 PACKAGE_DIR = Path(__file__).parent
-PAGE_SIZE = 25
+PAGE_SIZE = 50
 
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 templates.env.globals["statuses"] = list(Status)
@@ -69,6 +70,15 @@ templates.env.globals["age_restrictions"] = list(AgeRestriction)
 templates.env.globals["platform_kinds"] = list(PlatformKind)
 templates.env.globals["favorites_plan_name"] = FAVORITES_PLAN_NAME
 templates.env.globals["planned_plan_name"] = PLANNED_PLAN_NAME
+
+
+def static_url(name: str) -> str:
+    """Link a static file by its content, so every browser fetches it again once it changes."""
+    digest = hashlib.sha256((PACKAGE_DIR / "static" / name).read_bytes()).hexdigest()[:12]
+    return f"/static/{name}?v={digest}"
+
+
+templates.env.globals["static_url"] = static_url
 
 router = APIRouter()
 

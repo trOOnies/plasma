@@ -68,6 +68,9 @@ main {
   padding: 24px 16px 64px;
 }
 
+/* Library grids use the whole window. */
+main.wide { max-width: 1920px; }
+
 h1 { font-size: 1.75rem; line-height: 1.2; margin: 8px 0; }
 h2 { font-size: 1.1rem; margin: 32px 0 12px; }
 a { color: var(--link); }
@@ -195,12 +198,19 @@ button.danger { background: none; border-color: var(--danger); color: var(--dang
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(var(--tile-columns), minmax(0, 1fr));
   gap: 20px 14px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+
+/* Columns follow the window: 10 at full width, 5 at half width on a 1920px screen,
+   including with 125% or 150% display scaling. Both divide a page of 50 evenly. */
+.tiles { --tile-columns: 2; }
+@media (min-width: 420px) { .tiles { --tile-columns: 3; } }
+@media (min-width: 600px) { .tiles { --tile-columns: 5; } }
+@media (min-width: 1200px) { .tiles { --tile-columns: 10; } }
 
 .tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .tile a { color: var(--text); text-decoration: none; }

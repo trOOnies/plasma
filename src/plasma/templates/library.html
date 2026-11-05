@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pagination, status_label, title_tile %}
 {% block title %}Library · Plasma{% endblock %}
+{% block main_class %} class="wide"{% endblock %}
 {% block content %}
 <h1>{% if franchise %}{{ franchise }}{% elif kind %}{{ {"movie": "Movies", "series": "Series", "game": "Games"}[kind.value] }}{% else %}Everything{% endif %}</h1>
 

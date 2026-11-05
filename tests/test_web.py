@@ -880,6 +880,18 @@ def test_styles_are_cached_but_checked_so_changes_show_up(client):
     assert again.status_code == 304
 
 
+def test_stylesheet_link_changes_with_its_content(client, tmp_path, monkeypatch):
+    link = re.compile(r'href="(/static/style\.css\?v=\w+)"')
+    before = link.search(client.get("/").text).group(1)
+    assert client.get(before).status_code == 200
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "style.css").write_text("body {}")
+    (static / "exit.js").write_text("")
+    monkeypatch.setattr(web, "PACKAGE_DIR", tmp_path)
+    assert link.search(client.get("/").text).group(1) != before
+
+
 def test_exit_button_is_on_every_page(client):
     assert 'action="/exit"' in client.get("/").text
     assert 'action="/exit"' in client.get("/help").text
@@ -1034,7 +1046,7 @@ def pagination_navs(page: str) -> list[str]:
 def test_short_list_has_no_pagination(client, conn):
     add_movies(conn, web.PAGE_SIZE)
     page = client.get("/titles?kind=movie").text
-    assert "Film 025" in page and pagination_navs(page) == []
+    assert "Film 050" in page and pagination_navs(page) == []
 
 
 def test_pagination_is_mirrored_above_and_below_the_list(client, conn):
@@ -1044,29 +1056,29 @@ def test_pagination_is_mirrored_above_and_below_the_list(client, conn):
     strip_label = re.compile(r'aria-label="[^"]*"')
     assert strip_label.sub("", top) == strip_label.sub("", bottom)
     assert page.index(top) < page.index('<ul class="tiles">') < page.index(bottom)
-    assert "Film 025" in page and "Film 026" not in page
+    assert "Film 050" in page and "Film 051" not in page
     assert '<span class="button small" aria-disabled="true">Previous</span>' in top
 
 
 @pytest.mark.parametrize(
     "number, first, last",
-    [("2", "Film 026", "Film 030"), ("99", "Film 026", "Film 030"), ("-1", "Film 001", "Film 025")],
+    [("2", "Film 051", "Film 060"), ("99", "Film 051", "Film 060"), ("-1", "Film 001", "Film 050")],
 )
 def test_pages_split_the_list_and_stay_in_range(client, conn, number, first, last):
-    add_movies(conn, 30)
+    add_movies(conn, 60)
     page = client.get(f"/titles?kind=movie&page={number}").text
     assert first in page and last in page
-    assert "Film 025" not in page or first == "Film 001"
+    assert "Film 050" not in page or first == "Film 001"
 
 
 def test_page_links_keep_the_filters(client, conn):
-    add_movies(conn, 30)
+    add_movies(conn, 60)
     page = client.get("/titles?kind=movie&q=Film+0&status=&page=1").text
     assert 'href="/titles?kind=movie&amp;q=Film+0&amp;page=2"' in page
 
 
 def test_filter_form_starts_again_at_the_first_page(client, conn):
-    add_movies(conn, 30)
+    add_movies(conn, 60)
     assert 'name="page"' not in client.get("/titles?kind=movie&page=2").text
 
 
