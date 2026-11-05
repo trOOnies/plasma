@@ -21,8 +21,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BeforeValidator, ValidationError
 from starlette.background import BackgroundTask
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from plasma import duo, library, watch_data
+from plasma import duo, influencers, library, watch_data
 from plasma.db import connect
 from plasma.importer import (
     IMAGE_FOLDERS,
@@ -917,6 +918,375 @@ def delete_platform(conn: Conn, platform_id: int) -> Response:
     with conn:
         library.delete_platform(conn, platform_id)
     return redirect("/platforms")
+
+
+def require_influencer(conn: sqlite3.Connection, influencer_id: int) -> sqlite3.Row:
+    influencer = influencers.get_influencer(conn, influencer_id)
+    if influencer is None:
+        raise HTTPException(status_code=404)
+    return influencer
+
+
+def require_collage(
+    conn: sqlite3.Connection, influencer_id: int, collage_id: int
+) -> tuple[sqlite3.Row, sqlite3.Row]:
+    influencer = require_influencer(conn, influencer_id)
+    collage = influencers.get_collage(conn, influencer_id, collage_id)
+    if collage is None:
+        raise HTTPException(status_code=404)
+    return influencer, collage
+
+
+def require_item(conn: sqlite3.Connection, collage_id: int, item_id: int) -> sqlite3.Row:
+    item = influencers.get_item(conn, collage_id, item_id)
+    if item is None:
+        raise HTTPException(status_code=404)
+    return item
+
+
+def read_picture(file: Any, errors: list[str], label: str = "Picture") -> bytes | None:
+    """The bytes of an uploaded picture, or None if none was picked. Problems go in errors."""
+    # request.form() gives Starlette's UploadFile, which FastAPI's only extends.
+    content = file.file.read() if isinstance(file, StarletteUploadFile) else b""
+    if not content:
+        return None
+    try:
+        influencers.image_type(content)
+    except ValueError as error:
+        errors.append(f"{label}: {error}")
+        return None
+    return content
+
+
+def influencer_form_values(form: Mapping) -> dict[str, str]:
+    keys = ["name", "website", *(f"social_{network.key}" for network in influencers.NETWORKS)]
+    return {key: str(form.get(key, "")) for key in keys}
+
+
+def render_influencer_form(
+    request: Request,
+    form: dict[str, str],
+    influencer: sqlite3.Row | None = None,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    context = {
+        "form": form,
+        "influencer": influencer,
+        "networks": influencers.NETWORKS,
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(
+        request, "influencer_form.html", context, status_code=status_code
+    )
+
+
+@router.get("/uploads/{upload_id}")
+def upload(conn: Conn, upload_id: int) -> Response:
+    row = influencers.get_upload(conn, upload_id)
+    if row is None:
+        raise HTTPException(status_code=404)
+    # A changed picture gets a new id, so this one never changes.
+    headers = {"Cache-Control": "private, max-age=31536000, immutable"}
+    return Response(row["content"], media_type=row["media_type"], headers=headers)
+
+
+@router.get("/influencers", response_class=HTMLResponse)
+def influencers_page(request: Request, conn: Conn, q: str = "", page: int = 1) -> Response:
+    shown, pages = paginate(request, influencers.list_influencers(conn, q.strip()), page)
+    context = {"influencers": shown, "pages": pages, "q": q}
+    return templates.TemplateResponse(request, "influencers.html", context)
+
+
+@router.get("/influencers/new", response_class=HTMLResponse)
+def new_influencer(request: Request) -> Response:
+    return render_influencer_form(request, influencer_form_values({}))
+
+
+@router.post("/influencers")
+async def create_influencer(request: Request, conn: Conn) -> Response:
+    form = await request.form()
+    values = influencer_form_values(form)
+    data, errors = influencers.parse_influencer(values)
+    picture = read_picture(form.get("picture"), errors)
+    if errors:
+        return render_influencer_form(request, values, errors=errors, status_code=422)
+    try:
+        with conn:
+            influencer_id = influencers.create_influencer(conn, data, picture)
+    except influencers.DuplicateInfluencerError:
+        errors = ["That influencer is already here."]
+        return render_influencer_form(request, values, errors=errors, status_code=409)
+    return redirect(f"/influencers/{influencer_id}")
+
+
+def render_influencer(
+    request: Request,
+    conn: sqlite3.Connection,
+    influencer: sqlite3.Row,
+    form: Mapping | None = None,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    website = influencer["website"]
+    context = {
+        "influencer": influencer,
+        "socials": influencers.influencer_socials(conn, influencer["id"]),
+        "website_warnings": influencers.link_warnings(website) if website else [],
+        "collages": influencers.list_collages(conn, influencer["id"]),
+        "form": form or {},
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(
+        request, "influencer.html", context, status_code=status_code
+    )
+
+
+@router.get("/influencers/{influencer_id}", response_class=HTMLResponse)
+def influencer_page(request: Request, conn: Conn, influencer_id: int) -> Response:
+    return render_influencer(request, conn, require_influencer(conn, influencer_id))
+
+
+@router.get("/influencers/{influencer_id}/edit", response_class=HTMLResponse)
+def edit_influencer(request: Request, conn: Conn, influencer_id: int) -> Response:
+    influencer = require_influencer(conn, influencer_id)
+    values = {"name": influencer["name"], "website": influencer["website"]}
+    for social in influencers.influencer_socials(conn, influencer_id):
+        values[f"social_{social['network']}"] = social["url"]
+    return render_influencer_form(request, influencer_form_values(values), influencer)
+
+
+@router.post("/influencers/{influencer_id}")
+async def update_influencer(request: Request, conn: Conn, influencer_id: int) -> Response:
+    influencer = require_influencer(conn, influencer_id)
+    form = await request.form()
+    values = influencer_form_values(form)
+    data, errors = influencers.parse_influencer(values)
+    picture = read_picture(form.get("picture"), errors)
+    if errors:
+        return render_influencer_form(request, values, influencer, errors, 422)
+    try:
+        with conn:
+            influencers.update_influencer(
+                conn, influencer_id, data, picture, remove_picture=bool(form.get("remove_picture"))
+            )
+    except influencers.DuplicateInfluencerError:
+        errors = ["That influencer is already here."]
+        return render_influencer_form(request, values, influencer, errors, 409)
+    return redirect(f"/influencers/{influencer_id}")
+
+
+@router.post("/influencers/{influencer_id}/delete")
+def delete_influencer(conn: Conn, influencer_id: int) -> Response:
+    require_influencer(conn, influencer_id)
+    with conn:
+        influencers.delete_influencer(conn, influencer_id)
+    return redirect("/influencers")
+
+
+def parse_collage(name: str, description: str) -> tuple[str, str, list[str]]:
+    errors = []
+    try:
+        name = influencers.check_name(name)
+    except ValueError as error:
+        errors.append(f"Name: {error}")
+    try:
+        description = influencers.check_text(description, "description")
+    except ValueError as error:
+        errors.append(f"Description: {error}")
+    return name, description, errors
+
+
+@router.post("/influencers/{influencer_id}/collages")
+def create_collage(
+    request: Request,
+    conn: Conn,
+    influencer_id: int,
+    name: str = Form(""),
+    description: str = Form(""),
+) -> Response:
+    influencer = require_influencer(conn, influencer_id)
+    form = {"name": name, "description": description}
+    name, description, errors = parse_collage(name, description)
+    if errors:
+        return render_influencer(request, conn, influencer, form, errors, 422)
+    try:
+        with conn:
+            collage_id = influencers.create_collage(conn, influencer_id, name, description)
+    except influencers.DuplicateCollageError:
+        errors = [f"{influencer['name']} already has a collage called {name}."]
+        return render_influencer(request, conn, influencer, form, errors, 409)
+    return redirect(f"/influencers/{influencer_id}/collages/{collage_id}")
+
+
+def render_collage(
+    request: Request,
+    conn: sqlite3.Connection,
+    influencer: sqlite3.Row,
+    collage: sqlite3.Row,
+    *,
+    form: Mapping | None = None,
+    errors: list[str] | None = None,
+    adding: str = "",
+    status_code: int = 200,
+) -> Response:
+    items = influencers.collage_items(conn, collage["id"])
+    links = [(item["id"], item["url"]) for item in items if item["kind"] == "link"]
+    warnings = {
+        item_id: influencers.link_warnings(url, [other for other_id, other in links
+                                                 if other_id != item_id])
+        for item_id, url in links
+    }
+    context = {
+        "influencer": influencer,
+        "collage": collage,
+        "items": items,
+        "warnings": warnings,
+        "embed_url": influencers.embed_url,
+        "is_vertical": influencers.is_vertical,
+        "form": form or {},
+        "adding": adding,
+        "errors": errors or [],
+    }
+    return templates.TemplateResponse(request, "collage.html", context, status_code=status_code)
+
+
+def collage_url(influencer_id: int, collage_id: int, anchor: str = "") -> str:
+    url = f"/influencers/{influencer_id}/collages/{collage_id}"
+    return f"{url}#{anchor}" if anchor else url
+
+
+@router.get("/influencers/{influencer_id}/collages/{collage_id}", response_class=HTMLResponse)
+def collage_page(request: Request, conn: Conn, influencer_id: int, collage_id: int) -> Response:
+    influencer, collage = require_collage(conn, influencer_id, collage_id)
+    return render_collage(request, conn, influencer, collage)
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}")
+def update_collage(
+    request: Request,
+    conn: Conn,
+    influencer_id: int,
+    collage_id: int,
+    name: str = Form(""),
+    description: str = Form(""),
+) -> Response:
+    influencer, collage = require_collage(conn, influencer_id, collage_id)
+    form = {"name": name, "description": description}
+    name, description, errors = parse_collage(name, description)
+    if errors:
+        return render_collage(
+            request, conn, influencer, collage,
+            form=form, errors=errors, adding="collage", status_code=422,
+        )
+    try:
+        with conn:
+            influencers.update_collage(conn, collage_id, name, description)
+    except influencers.DuplicateCollageError:
+        errors = [f"{influencer['name']} already has a collage called {name}."]
+        return render_collage(
+            request, conn, influencer, collage,
+            form=form, errors=errors, adding="collage", status_code=409,
+        )
+    return redirect(collage_url(influencer_id, collage_id))
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}/delete")
+def delete_collage(conn: Conn, influencer_id: int, collage_id: int) -> Response:
+    require_collage(conn, influencer_id, collage_id)
+    with conn:
+        influencers.delete_collage(conn, collage_id)
+    return redirect(f"/influencers/{influencer_id}")
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}/items")
+async def add_collage_item(
+    request: Request, conn: Conn, influencer_id: int, collage_id: int
+) -> Response:
+    influencer, collage = require_collage(conn, influencer_id, collage_id)
+    form = await request.form()
+    kind = str(form.get("kind", ""))
+    if kind not in influencers.ITEM_KINDS:
+        raise HTTPException(status_code=422)
+    values = {"text": str(form.get("text", "")), "url": str(form.get("url", ""))}
+    errors: list[str] = []
+    fields: dict[str, Any] = {}
+    label = {"note": "Note", "link": "Title", "video": "Title", "image": "Caption"}[kind]
+    try:
+        fields["text"] = influencers.check_text(values["text"], label.lower(), kind == "note")
+    except ValueError as error:
+        errors.append(f"{label}: {error}")
+    if kind in ("link", "video"):
+        try:
+            if kind == "link":
+                fields["url"] = influencers.check_url(values["url"])
+            else:
+                fields["url"], *video = influencers.check_video(values["url"])
+                fields["video"] = tuple(video)
+        except ValueError as error:
+            errors.append(f"{'Link' if kind == 'link' else 'Video'}: {error}")
+    picture = None
+    if kind == "image":
+        picture = read_picture(form.get("image"), errors, "Image")
+        if picture is None and not errors:
+            errors.append("Image: pick a picture to add")
+    if errors:
+        return render_collage(
+            request, conn, influencer, collage,
+            form=values, errors=errors, adding=kind, status_code=422,
+        )
+    with conn:
+        if picture:
+            fields["upload_id"] = influencers.add_upload(conn, picture)
+        item_id = influencers.add_item(conn, collage_id, kind, **fields)
+    return redirect(collage_url(influencer_id, collage_id, f"item-{item_id}"))
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}/items/{item_id}/text")
+def update_collage_item(
+    request: Request,
+    conn: Conn,
+    influencer_id: int,
+    collage_id: int,
+    item_id: int,
+    text: str = Form(""),
+) -> Response:
+    influencer, collage = require_collage(conn, influencer_id, collage_id)
+    item = require_item(conn, collage_id, item_id)
+    try:
+        text = influencers.check_text(text, "text", required=item["kind"] == "note")
+    except ValueError as error:
+        return render_collage(
+            request, conn, influencer, collage,
+            errors=[f"Editing an item: {error}"], status_code=422,
+        )
+    with conn:
+        influencers.update_item_text(conn, item_id, text)
+    return redirect(collage_url(influencer_id, collage_id, f"item-{item_id}"))
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}/items/{item_id}/move")
+def move_collage_item(
+    conn: Conn,
+    influencer_id: int,
+    collage_id: int,
+    item_id: int,
+    step: Annotated[int, Form(ge=-1, le=1)],
+) -> Response:
+    require_collage(conn, influencer_id, collage_id)
+    require_item(conn, collage_id, item_id)
+    with conn:
+        influencers.move_item(conn, collage_id, item_id, step)
+    return redirect(collage_url(influencer_id, collage_id, f"item-{item_id}"))
+
+
+@router.post("/influencers/{influencer_id}/collages/{collage_id}/items/{item_id}/delete")
+def delete_collage_item(conn: Conn, influencer_id: int, collage_id: int, item_id: int) -> Response:
+    require_collage(conn, influencer_id, collage_id)
+    require_item(conn, collage_id, item_id)
+    with conn:
+        influencers.delete_item(conn, item_id)
+    return redirect(collage_url(influencer_id, collage_id))
 
 
 def render_plans(

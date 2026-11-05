@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit " ~ influencer.name if influencer else "New influencer" }} · Plasma{% endblock %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/influencers">Influencers</a>
+  {% if influencer %}<span aria-hidden="true">›</span> <a href="/influencers/{{ influencer.id }}">{{ influencer.name }}</a>{% endif %}
+</nav>
+<h1>{{ "Edit influencer" if influencer else "New influencer" }}</h1>
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<form class="stacked" method="post" action="{{ '/influencers/%d' % influencer.id if influencer else '/influencers' }}" enctype="multipart/form-data">
+  <label>Name
+    <input name="name" value="{{ form.name }}" required maxlength="100">
+  </label>
+  <label>Website (optional)
+    <input name="website" value="{{ form.website }}" placeholder="https://example.com" inputmode="url">
+  </label>
+  <label>Profile picture (optional)
+    <input name="picture" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif">
+  </label>
+  {% if errors %}<p class="muted form-hint">Pick the picture again if you chose one, since it isn't kept when something needs fixing.</p>{% endif %}
+  {% if influencer and influencer.picture_id %}
+  <div class="current-picture">
+    <img class="avatar-small" src="/uploads/{{ influencer.picture_id }}" alt="Current profile picture">
+    <label class="check"><input type="checkbox" name="remove_picture" value="true"> Remove this picture</label>
+  </div>
+  {% endif %}
+
+  <fieldset class="social-fields">
+    <legend>Social media (optional)</legend>
+    <p class="muted">Paste a profile address, or just the handle.</p>
+    {% for network in networks %}
+    <label>{{ network.label }}
+      <input name="social_{{ network.key }}" value="{{ form['social_' ~ network.key] }}" placeholder="{{ network.example }}">
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <div class="actions">
+    <button class="primary">{{ "Save" if influencer else "Add influencer" }}</button>
+    <a class="button" href="{{ '/influencers/%d' % influencer.id if influencer else '/influencers' }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

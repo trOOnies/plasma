@@ -660,3 +660,79 @@ button.episode.watched { background: var(--plasma) border-box; border-color: tra
 .data-card p { flex: 1; }
 .data-card .data-load { width: 100%; margin-bottom: 0; }
 .data-card .errors { max-width: none; }
+
+/* Influencers */
+.tile-art.avatar { aspect-ratio: 1; border-radius: 50%; }
+.tile-art.avatar img { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: cover; background: none; }
+.tile-art.avatar .kind-icon svg, .avatar-blank .kind-icon svg { width: 48px; height: 48px; stroke-width: 1.2; }
+
+.profile { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 20px; align-items: start; }
+.profile-main { min-width: 0; }
+.avatar-large { width: 140px; height: 140px; border: 2px solid transparent; border-radius: 50%; background: var(--plasma) border-box; object-fit: cover; }
+.avatar-blank { display: grid; place-items: center; background: linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box, var(--plasma) border-box; }
+.avatar-small { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+.website { margin: 4px 0; overflow-wrap: anywhere; }
+
+@media (max-width: 520px) {
+  .profile { grid-template-columns: minmax(0, 1fr); }
+  .avatar-large { width: 110px; height: 110px; }
+}
+
+.current-picture { display: flex; align-items: center; gap: 12px; }
+.stacked .check { display: flex; align-items: center; gap: 6px; }
+.stacked .check input { flex: none; width: auto; }
+.form-hint { margin: -8px 0 0; font-size: 0.85rem; }
+
+.social-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
+.social-fields legend { padding: 0 4px; font-size: 0.95rem; }
+.social-fields p { grid-column: 1 / -1; margin: 0; font-size: 0.9rem; }
+
+.collage-card .card-title { overflow-wrap: anywhere; }
+.collage-cover { display: block; width: 100%; aspect-ratio: 16 / 9; margin-bottom: 8px; border-radius: 6px; object-fit: cover; }
+
+.collage-board { columns: 300px; column-gap: 14px; margin: 16px 0; }
+
+.collage-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  break-inside: avoid;
+  scroll-margin-top: 12px;
+}
+
+.collage-item:target { border-color: var(--accent); }
+.item-note { border-left: 4px solid var(--planned); }
+.item-link { border-left: 4px solid var(--link); }
+.item-video { border-left: 4px solid var(--accent); }
+.item-image { border-left: 4px solid var(--completed); }
+.note-text, .item-caption { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.item-image img { display: block; width: 100%; height: auto; border-radius: 6px; }
+.link-title { font-weight: 600; overflow-wrap: anywhere; }
+.link-url { font-size: 0.8rem; overflow-wrap: anywhere; }
+
+.link-warnings { margin: 4px 0; padding: 6px 10px; list-style: none; border-radius: 6px; background: var(--surface-raised); color: var(--danger); font-size: 0.85rem; }
+.link-warnings li + li { margin-top: 2px; }
+
+.video-frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: #000; }
+.video-frame.vertical { aspect-ratio: 9 / 16; max-height: 640px; margin: 0 auto; width: 100%; max-width: 360px; }
+.video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+.item-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-top: 4px; }
+.item-tools > form { display: flex; gap: 4px; margin: 0; }
+.item-tools > form:last-child { margin-left: auto; }
+.item-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
+.item-edit { flex: 1 1 auto; }
+.item-edit summary { display: inline-block; width: 28px; height: 28px; padding: 5px; list-style: none; cursor: pointer; }
+.item-edit summary::-webkit-details-marker { display: none; }
+.item-edit[open] { flex-basis: 100%; order: 1; }
+.item-edit .stacked { margin-top: 8px; }
+
+.add-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; }
+.add-items .card { margin: 0; max-width: none; align-content: start; }
+.add-items h3 { margin: 0; font-size: 1rem; }
+.add-items button { justify-self: start; }

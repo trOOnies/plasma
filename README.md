@@ -2,7 +2,7 @@
 
 # plasma
 
-Personal tracker for TV series, movies and games. A FastAPI app with server-rendered pages, backed by a local SQLite file.
+Personal tracker for TV series, movies, games and the influencers you follow. A FastAPI app with server-rendered pages, backed by a local SQLite file.
 
 - Track movies and series as planned, watching, completed or dropped, with notes and a rating of 1 to 5 stars, which episodes can have too. Titles start with no status.
 - Link series, movies or games into a franchise, and step through it in release order. Each franchise holds one type only, so a Harry Potter movie franchise and game franchise stay separate.
@@ -18,6 +18,7 @@ Personal tracker for TV series, movies and games. A FastAPI app with server-rend
 - Load your titles from YAML files in `info/`.
 - Export your watch statuses and ratings to a small file, and import such a file on any machine.
 - Compare with someone else's file on the Duo tab, to see what you could watch or play together.
+- Follow content creators on the Influencers tab, with a profile picture, website and social media profiles, and make collages of notes, links, YouTube and TikTok videos and images about each one.
 
 The app's Help tab explains how to use it.
 
@@ -103,6 +104,12 @@ The Duo tab takes another person's watch data file and lists what you could enjo
 | Games you both want | Marked Wanted by both |
 
 Empty sections are hidden. Dropped counts as no status here, so it never rules a title in or out. Titles match by kind, name (ignoring case) and year, and a year missing on one side still matches. A title only they have can appear in They loved, without a link.
+
+### Influencers
+
+Influencers and their collages are only added in the app, never from `info/`, so `make import` leaves them alone and can't bring back anything you deleted. Profile pictures and collage images are stored in the database itself, so a copy of `local/plasma.db` holds them too. Watch data files don't include influencers.
+
+A link in a collage must be an `http://` or `https://` address with a real site name, and `https://` is added when it's left out. Links that are valid but look risky are saved with a warning: not secure, a bare IP address, an unusual port, a name before an `@`, letters from other alphabets, a link shortener, a program download, a very long address, a duplicate in the same collage, or a video that could be a Video item. Videos must be a single YouTube video or Short, or a full TikTok video address.
 
 ### Files in `info/`
 

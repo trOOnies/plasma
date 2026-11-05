@@ -9,7 +9,7 @@ from plasma.models import PlatformKind, guess_platform_kind
 
 DEFAULT_PATH = Path("local/plasma.db")
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 MULTIPLAYER_STATUS_COLUMN = """TEXT NOT NULL DEFAULT 'none'
         CHECK (multiplayer_status IN ('none', 'planned', 'watching', 'dropped'))"""
@@ -128,6 +128,48 @@ CREATE TABLE IF NOT EXISTS cleared_platform_fields (
 CREATE TABLE IF NOT EXISTS duo_file (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     content BLOB NOT NULL
+);
+
+-- Pictures added in the web UI. Unlike title images, these don't come from info/.
+CREATE TABLE IF NOT EXISTS uploads (
+    id INTEGER PRIMARY KEY,
+    media_type TEXT NOT NULL,
+    content BLOB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS influencers (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    website TEXT NOT NULL DEFAULT '',
+    picture_id INTEGER REFERENCES uploads (id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS influencer_socials (
+    influencer_id INTEGER NOT NULL REFERENCES influencers (id) ON DELETE CASCADE,
+    network TEXT NOT NULL,
+    url TEXT NOT NULL,
+    PRIMARY KEY (influencer_id, network)
+);
+
+CREATE TABLE IF NOT EXISTS collages (
+    id INTEGER PRIMARY KEY,
+    influencer_id INTEGER NOT NULL REFERENCES influencers (id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    description TEXT NOT NULL DEFAULT '',
+    UNIQUE (influencer_id, name)
+);
+
+-- A note's text, a link's or video's title, or an image's caption all go in text.
+CREATE TABLE IF NOT EXISTS collage_items (
+    id INTEGER PRIMARY KEY,
+    collage_id INTEGER NOT NULL REFERENCES collages (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('note', 'link', 'video', 'image')),
+    text TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    video_provider TEXT CHECK (video_provider IN ('youtube', 'tiktok')),
+    video_id TEXT,
+    upload_id INTEGER REFERENCES uploads (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS trimmed_seasons (

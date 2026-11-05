@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination, person_icon %}
+{% block title %}Influencers · Plasma{% endblock %}
+{% block main_class %} class="wide"{% endblock %}
+{% block content %}
+<div class="title-head">
+  <h1>Influencers</h1>
+  <a class="button" href="/influencers/new">+ Influencer</a>
+</div>
+<p class="muted">The content creators you follow, with their profiles and your collages about them.</p>
+
+<form class="filters" method="get" action="/influencers">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+  <button>Search</button>
+</form>
+
+{% if influencers %}
+{{ pagination(pages, "Pages, top") }}
+<ul class="tiles">
+  {% for influencer in influencers %}
+  <li class="tile">
+    <a href="/influencers/{{ influencer.id }}">
+      <span class="tile-art avatar">
+        {% if influencer.picture_id %}<img src="/uploads/{{ influencer.picture_id }}" alt="" loading="lazy">{% else %}<span class="tile-blank">{{ person_icon() }}</span>{% endif %}
+      </span>
+      <span class="tile-name" title="{{ influencer.name }}">{{ influencer.name }}</span>
+    </a>
+    <span class="muted tile-facts">{{ influencer.collage_count }} collage{{ "" if influencer.collage_count == 1 else "s" }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{{ pagination(pages, "Pages, bottom") }}
+{% elif q %}
+<p class="muted">No influencers match.</p>
+{% else %}
+<p class="muted">None yet. <a href="/influencers/new">Add your first one</a>.</p>
+{% endif %}
+{% endblock %}

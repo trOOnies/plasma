@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pencil, warning_list %}
+{% block title %}{{ collage.name }} · {{ influencer.name }} · Plasma{% endblock %}
+{% block main_class %} class="wide"{% endblock %}
+{% block content %}
+{% set base = "/influencers/%d/collages/%d" % (influencer.id, collage.id) %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/influencers">Influencers</a>
+  <span aria-hidden="true">›</span>
+  <a href="/influencers/{{ influencer.id }}">{{ influencer.name }}</a>
+</nav>
+<h1>{{ collage.name }}</h1>
+{% if collage.description %}<p class="description">{{ collage.description }}</p>{% endif %}
+
+{% if errors %}
+<ul class="errors" role="alert">
+  {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% if items %}
+<div class="collage-board">
+  {% for item in items %}
+  <article class="collage-item item-{{ item.kind }}" id="item-{{ item.id }}">
+    {% if item.kind == "note" %}
+    <p class="note-text">{{ item.text }}</p>
+    {% elif item.kind == "link" %}
+    <a class="link-title" href="{{ item.url }}" rel="noreferrer noopener" target="_blank">{{ item.text or item.url }}</a>
+    {% if item.text %}<span class="muted link-url">{{ item.url }}</span>{% endif %}
+    {{ warning_list(warnings[item.id]) }}
+    {% elif item.kind == "video" %}
+    <div class="video-frame{% if is_vertical(item) %} vertical{% endif %}">
+      <iframe src="{{ embed_url(item.video_provider, item.video_id) }}" title="{{ item.text or 'Video' }}" loading="lazy"
+              allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen
+              referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+    {% if item.text %}<p class="item-caption">{{ item.text }}</p>{% endif %}
+    <a class="muted link-url" href="{{ item.url }}" rel="noreferrer noopener" target="_blank">Open on {{ "YouTube" if item.video_provider == "youtube" else "TikTok" }}</a>
+    {% elif item.kind == "image" %}
+    <a href="/uploads/{{ item.upload_id }}" target="_blank"><img src="/uploads/{{ item.upload_id }}" alt="{{ item.text }}" loading="lazy"></a>
+    {% if item.text %}<p class="item-caption">{{ item.text }}</p>{% endif %}
+    {% endif %}
+
+    <div class="item-tools">
+      <form method="post" action="{{ base }}/items/{{ item.id }}/move">
+        <button class="small" name="step" value="-1" aria-label="Move earlier" title="Move earlier"{% if loop.first %} disabled{% endif %}>↑</button>
+        <button class="small" name="step" value="1" aria-label="Move later" title="Move later"{% if loop.last %} disabled{% endif %}>↓</button>
+      </form>
+      <details class="item-edit">
+        <summary class="icon-link" aria-label="Edit" title="Edit">{{ pencil() }}</summary>
+        <form class="stacked" method="post" action="{{ base }}/items/{{ item.id }}/text">
+          <label>{{ {"note": "Note", "link": "Title", "video": "Title", "image": "Caption"}[item.kind] }}
+            <textarea name="text" rows="{{ 5 if item.kind == 'note' else 2 }}"{% if item.kind == "note" %} required{% endif %}>{{ item.text }}</textarea>
+          </label>
+          <button class="small primary">Save</button>
+        </form>
+      </details>
+      <form method="post" action="{{ base }}/items/{{ item.id }}/delete" onsubmit="return confirm('Remove this from the collage?')">
+        <button class="small danger">Remove</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">This collage is empty. Add a note, link, video or image below.</p>
+{% endif %}
+
+<h2 id="add">Add to the collage</h2>
+{% set refill = form if adding in ("note", "link", "video", "image") else {} %}
+<div class="add-items">
+  <form class="card stacked" method="post" action="{{ base }}/items">
+    <h3>📝 Note</h3>
+    <input type="hidden" name="kind" value="note">
+    <label>Note
+      <textarea name="text" rows="4" required>{{ refill.text if adding == "note" }}</textarea>
+    </label>
+    <button class="primary">Add note</button>
+  </form>
+
+  <form class="card stacked" method="post" action="{{ base }}/items">
+    <h3>🔗 Link</h3>
+    <input type="hidden" name="kind" value="link">
+    <label>Address
+      <input name="url" value="{{ refill.url if adding == 'link' }}" required placeholder="https://example.com/article" inputmode="url">
+    </label>
+    <label>Title (optional)
+      <input name="text" value="{{ refill.text if adding == 'link' }}" maxlength="5000">
+    </label>
+    <button class="primary">Add link</button>
+  </form>
+
+  <form class="card stacked" method="post" action="{{ base }}/items">
+    <h3>🎬 Video</h3>
+    <input type="hidden" name="kind" value="video">
+    <label>YouTube or TikTok address
+      <input name="url" value="{{ refill.url if adding == 'video' }}" required placeholder="https://www.youtube.com/watch?v=…" inputmode="url">
+    </label>
+    <label>Title (optional)
+      <input name="text" value="{{ refill.text if adding == 'video' }}" maxlength="5000">
+    </label>
+    <button class="primary">Add video</button>
+  </form>
+
+  <form class="card stacked" method="post" action="{{ base }}/items" enctype="multipart/form-data">
+    <h3>🖼️ Image</h3>
+    <input type="hidden" name="kind" value="image">
+    <label>Picture
+      <input name="image" type="file" required accept="image/jpeg,image/png,image/gif,image/webp,image/avif">
+    </label>
+    <label>Caption (optional)
+      <input name="text" value="{{ refill.text if adding == 'image' }}" maxlength="5000">
+    </label>
+    <button class="primary">Add image</button>
+  </form>
+</div>
+
+<h2>Collage details</h2>
+<form class="stacked" method="post" action="{{ base }}">
+  <label>Name
+    <input name="name" value="{{ form.name if adding == 'collage' else collage.name }}" required maxlength="100">
+  </label>
+  <label>Description (optional)
+    <textarea name="description" rows="2">{{ form.description if adding == "collage" else collage.description }}</textarea>
+  </label>
+  <div class="actions">
+    <button class="primary">Save</button>
+  </div>
+</form>
+
+<form class="danger-zone" method="post" action="{{ base }}/delete"
+      onsubmit="return confirm('Delete this collage and everything in it?')">
+  <button class="danger">Delete collage</button>
+</form>
+{% endblock %}
